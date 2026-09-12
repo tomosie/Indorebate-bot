@@ -43,16 +43,19 @@ module.exports = async (req, res) => {
   }
 
   try {
-    const yesterday = wibDateString(-1); // hari yang baru saja selesai (WIB)
+    // Tambahkan ?preview=today di URL untuk lihat data HARI INI (untuk testing).
+    // Tanpa parameter ini (kondisi normal via cron), tetap laporkan hari kemarin.
+    const targetOffset = req.query && req.query.preview === 'today' ? 0 : -1;
+    const targetDate = wibDateString(targetOffset);
     const [total, unik, brokerCounts] = await Promise.all([
-      kv.get(`pindahib:total:day:${yesterday}`),
-      kv.scard(`pindahib:users:day:${yesterday}`),
+      kv.get(`pindahib:total:day:${targetDate}`),
+      kv.scard(`pindahib:users:day:${targetDate}`),
       Promise.all(
-        BROKERS.map((b) => kv.get(`pindahib:broker:day:${yesterday}:${b.key}`))
+        BROKERS.map((b) => kv.get(`pindahib:broker:day:${targetDate}:${b.key}`))
       ),
     ]);
 
-    const tanggalIndo = new Date(yesterday).toLocaleDateString('id-ID', {
+    const tanggalIndo = new Date(targetDate).toLocaleDateString('id-ID', {
       day: 'numeric',
       month: 'long',
       year: 'numeric',
@@ -74,7 +77,7 @@ module.exports = async (req, res) => {
       (breakdown || '  (belum ada yang pilih broker)')
     );
 
-    res.status(200).json({ ok: true, date: yesterday, total: total || 0, unik });
+    res.status(200).json({ ok: true, date: targetDate, total: total || 0, unik });
   } catch (err) {
     console.error('report-daily error:', err);
     res.status(500).json({ ok: false, error: String(err) });
