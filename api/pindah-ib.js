@@ -101,6 +101,18 @@ bot.start(async (ctx) => {
   );
 });
 
+// Catat pilihan broker (untuk breakdown per-broker di laporan)
+async function logBrokerChoice(brokerKey) {
+  const today = wibDateString();
+  const month = wibMonthString();
+  await Promise.all([
+    kv.incr(`pindahib:broker:day:${today}:${brokerKey}`),
+    kv.incr(`pindahib:broker:month:${month}:${brokerKey}`),
+    kv.expire(`pindahib:broker:day:${today}:${brokerKey}`, 45 * 24 * 60 * 60),
+    kv.expire(`pindahib:broker:month:${month}:${brokerKey}`, 400 * 24 * 60 * 60),
+  ]);
+}
+
 // Satu handler untuk semua tombol broker (regex cocokkan semua callback_data
 // yang diawali "pindah_")
 bot.action(/^pindah_.+/, async (ctx) => {
@@ -112,6 +124,7 @@ bot.action(/^pindah_.+/, async (ctx) => {
     return;
   }
 
+  await logBrokerChoice(data);
   await ctx.answerCbQuery(`Menyiapkan link ${broker.name}...`);
 
   await ctx.editMessageText(
