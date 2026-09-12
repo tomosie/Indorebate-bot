@@ -1,4 +1,5 @@
 const { Telegraf, Markup } = require('telegraf');
+const { kv } = require('@vercel/kv');
 
 // ============ KONFIGURASI ============
 // Token BOT BERBEDA dari bot validasi akun (webhook.js) — pastikan
@@ -6,6 +7,38 @@ const { Telegraf, Markup } = require('telegraf');
 const BOT_TOKEN = process.env.PINDAH_IB_BOT_TOKEN;
 
 const bot = new Telegraf(BOT_TOKEN);
+
+// ============ TRACKING AKSES (untuk laporan harian/bulanan) ============
+// Tanggal/bulan dihitung berdasarkan waktu WIB (UTC+7), bukan UTC,
+// supaya "hari" dan "bulan" sesuai zona waktu Indonesia.
+function wibDateString(offsetDays = 0) {
+  const wib = new Date(Date.now() + 7 * 60 * 60 * 1000);
+  wib.setUTCDate(wib.getUTCDate() + offsetDays);
+  return wib.toISOString().slice(0, 10); // YYYY-MM-DD
+}
+function wibMonthString(offsetMonths = 0) {
+  const wib = new Date(Date.now() + 7 * 60 * 60 * 1000);
+  wib.setUTCMonth(wib.getUTCMonth() + offsetMonths);
+  return wib.toISOString().slice(0, 7); // YYYY-MM
+}
+
+// Simpan user ID ke Set harian & bulanan (otomatis unik, tidak dobel-hitung
+// kalau user yang sama pencet /start berkali-kali di hari/bulan yang sama)
+async function logAccess(userId) {
+  const today = wibDateString();
+  const month = wibMonthString();
+  await Promise.all([
+    kv.sadd(`pindahib:users:day:${today}`, userId),
+    kv.sadd(`pindahib:users:month:${month}`, userId),
+    kv.incr(`pindahib:total:day:${today}`),
+    kv.incr(`pindahib:total:month:${month}`),
+    // expire otomatis supaya data lama tidak menumpuk selamanya
+    kv.expire(`pindahib:users:day:${today}`, 45 * 24 * 60 * 60),
+    kv.expire(`pindahib:users:month:${month}`, 400 * 24 * 60 * 60),
+    kv.expire(`pindahib:total:day:${today}`, 45 * 24 * 60 * 60),
+    kv.expire(`pindahib:total:month:${month}`, 400 * 24 * 60 * 60),
+  ]);
+}
 
 // Mapping callback_data -> link pindah IB di indorebate.com
 const BROKER_LINKS = {
@@ -60,6 +93,7 @@ function buildBrokerKeyboard() {
 // ============ HANDLERS ============
 
 bot.start(async (ctx) => {
+  await logAccess(ctx.from.id);
   await ctx.reply(
     '👋 Selamat datang di *IndoRebate*!\n\n' +
     'Mau pindah IB ke broker apa? Silakan pilih salah satu di bawah ini:',
