@@ -1,13 +1,17 @@
 // api/validasi.js
 // Endpoint pengganti Formspree untuk form validasi akun di indorebate.com/validasi.html
 //
-// ENV VARS yang wajib diset di Vercel (Project Settings -> Environment Variables):
-//   TELEGRAM_BOT_TOKEN         -> token bot Telegram (boleh pakai bot yang sudah ada)
-//   TELEGRAM_VALIDASI_CHAT_ID  -> chat_id channel/grup BARU khusus notifikasi validasi
-//   RESEND_API_KEY             -> API key dari resend.com
-//   RESEND_FROM_EMAIL          -> alamat pengirim terverifikasi, mis. "Indorebate <noreply@indorebate.com>"
-//   ADMIN_EMAIL                -> email kamu sendiri, penerima notifikasi admin
-//   ALLOWED_ORIGIN             -> origin yang boleh akses, mis. "https://indorebate.com"
+// ENV VARS yang dipakai (mengikuti penamaan yang sudah ada di project indorebate-bot):
+//   BOT_TOKEN         -> token bot Telegram yang sudah ada (Jul 1), dipakai ulang
+//   VALIDASI_CHAT_ID  -> BARU, chat_id channel/grup khusus notifikasi validasi (belum ada di project ini,
+//                         perlu dibuat: bikin channel/grup baru, tambahkan bot sebagai admin, ambil chat_id-nya)
+//   RESEND_API_KEY    -> sudah ada di project ini
+//   RESEND_FROM_EMAIL -> sudah ada di project ini, isinya "Indorebate Validasi <noreply@indorebate.com>"
+//   ADMIN_EMAIL       -> BARU, email kamu sendiri, penerima notifikasi admin
+//
+// ALLOWED_ORIGIN di-hardcode langsung di kode (bukan env var) karena nilainya tidak akan berubah.
+
+const ALLOWED_ORIGIN = 'https://indorebate.com';
 
 const ALLOWED_BROKERS = [
   'Headway', 'Exness', 'HFM', 'Tickmill', 'JustMarkets', 'RoboForex', 'XM Global',
@@ -24,9 +28,9 @@ function isValidEmail(email) {
 }
 
 async function sendTelegramMessage(text) {
-  const token = process.env.TELEGRAM_BOT_TOKEN;
-  const chatId = process.env.TELEGRAM_VALIDASI_CHAT_ID;
-  if (!token || !chatId) throw new Error('Telegram env vars belum diset');
+  const token = process.env.BOT_TOKEN;
+  const chatId = process.env.VALIDASI_CHAT_ID;
+  if (!token || !chatId) throw new Error('Telegram env vars belum diset (BOT_TOKEN / VALIDASI_CHAT_ID)');
 
   const res = await fetch(`https://api.telegram.org/bot${token}/sendMessage`, {
     method: 'POST',
@@ -62,8 +66,7 @@ async function sendEmail({ to, subject, html }) {
 }
 
 export default async function handler(req, res) {
-  const allowedOrigin = process.env.ALLOWED_ORIGIN || 'https://indorebate.com';
-  res.setHeader('Access-Control-Allow-Origin', allowedOrigin);
+  res.setHeader('Access-Control-Allow-Origin', ALLOWED_ORIGIN);
   res.setHeader('Access-Control-Allow-Methods', 'POST, OPTIONS');
   res.setHeader('Access-Control-Allow-Headers', 'Content-Type');
 
