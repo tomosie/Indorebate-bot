@@ -3,11 +3,10 @@
 //
 // ENV VARS yang dipakai (mengikuti penamaan yang sudah ada di project indorebate-bot):
 //   BOT_TOKEN         -> token bot Telegram yang sudah ada (Jul 1), dipakai ulang
-//   VALIDASI_CHAT_ID  -> BARU, chat_id channel/grup khusus notifikasi validasi (belum ada di project ini,
-//                         perlu dibuat: bikin channel/grup baru, tambahkan bot sebagai admin, ambil chat_id-nya)
+//   VALIDASI_CHAT_ID  -> chat_id channel "Validasi Indorebate" (-1003933395442)
 //   RESEND_API_KEY    -> sudah ada di project ini
 //   RESEND_FROM_EMAIL -> sudah ada di project ini, isinya "Indorebate Validasi <noreply@indorebate.com>"
-//   ADMIN_EMAIL       -> BARU, email kamu sendiri, penerima notifikasi admin
+//   ADMIN_EMAIL       -> omahrebate@gmail.com, penerima notifikasi admin
 //
 // ALLOWED_ORIGIN di-hardcode langsung di kode (bukan env var) karena nilainya tidak akan berubah.
 
@@ -47,10 +46,13 @@ async function sendTelegramMessage(text) {
   return data;
 }
 
-async function sendEmail({ to, subject, html }) {
+async function sendEmail({ to, subject, html, replyTo }) {
   const apiKey = process.env.RESEND_API_KEY;
   const from = process.env.RESEND_FROM_EMAIL;
   if (!apiKey || !from) throw new Error('Resend env vars belum diset');
+
+  const payload = { from, to, subject, html };
+  if (replyTo) payload.reply_to = replyTo;
 
   const res = await fetch('https://api.resend.com/emails', {
     method: 'POST',
@@ -58,7 +60,7 @@ async function sendEmail({ to, subject, html }) {
       Authorization: `Bearer ${apiKey}`,
       'Content-Type': 'application/json',
     },
-    body: JSON.stringify({ from, to, subject, html }),
+    body: JSON.stringify(payload),
   });
   const data = await res.json();
   if (!res.ok) throw new Error('Resend API error: ' + JSON.stringify(data));
@@ -103,7 +105,7 @@ export default async function handler(req, res) {
       timeZone: 'Asia/Jakarta', dateStyle: 'medium', timeStyle: 'short',
     });
 
-    // --- 1. Kirim notifikasi ke Telegram (channel/chat khusus validasi) ---
+    // --- 1. Kirim notifikasi ke Telegram (channel khusus validasi) ---
     const telegramText =
       `🆕 <b>Validasi Akun Baru</b>\n\n` +
       `👤 Nama: ${escapeHtml(full_name)}\n` +
@@ -142,6 +144,7 @@ export default async function handler(req, res) {
         to: process.env.ADMIN_EMAIL,
         subject: `Validasi Akun Baru — ${full_name}`,
         html: adminEmailHtml,
+        replyTo: email, // reply dari email admin akan otomatis terarah ke email client
       }),
       sendEmail({
         to: email,
