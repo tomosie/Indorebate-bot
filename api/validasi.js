@@ -26,6 +26,43 @@ function isValidEmail(email) {
   return /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email);
 }
 
+// Verifikasi token reCAPTCHA v3 dari client ke Google.
+// Return true kalau valid & skornya di atas threshold, false kalau tidak.
+async function verifyRecaptcha(token) {
+  const secretKey = process.env.RECAPTCHA_SECRET_KEY;
+  if (!secretKey) {
+    console.warn('RECAPTCHA_SECRET_KEY belum diset, lewati verifikasi captcha.');
+    return true; // biar tidak mengunci form kalau env var belum dipasang
+  }
+  if (!token) return false;
+
+  const params = new URLSearchParams({ secret: secretKey, response: token });
+  const res = await fetch('https://www.google.com/recaptcha/api/siteverify', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+    body: params.toString(),
+  });
+  const data = await res.json();
+
+  // score 0.0 (kemungkinan besar bot) - 1.0 (kemungkinan besar manusia).
+  // 0.5 adalah threshold default yang direkomendasikan Google.
+  const RECAPTCHA_SCORE_THRESHOLD = 0.5;
+
+  if (!data.success) {
+    console.warn('reCAPTCHA gagal:', data['error-codes']);
+    return false;
+  }
+  if (data.action !== 'validasi_akun') {
+    console.warn('reCAPTCHA action tidak cocok:', data.action);
+    return false;
+  }
+  if (typeof data.score === 'number' && data.score < RECAPTCHA_SCORE_THRESHOLD) {
+    console.warn('reCAPTCHA score rendah:', data.score);
+    return false;
+  }
+  return true;
+}
+
 async function sendTelegramMessage(text) {
   const token = process.env.BOT_TOKEN;
   const chatId = process.env.VALIDASI_CHAT_ID;
@@ -122,6 +159,17 @@ export default async function handler(req, res) {
     const account_number = typeof body.account_number === 'string' ? body.account_number.trim() : '';
     const broker_name = typeof body.broker_name === 'string' ? body.broker_name.trim() : '';
     const email = typeof body.email === 'string' ? body.email.trim() : '';
+    const recaptcha_token = typeof body.recaptcha_token === 'string' ? body.recaptcha_token : '';
+
+    // --- Verifikasi captcha dulu sebelum proses lain, biar bot tidak
+    // membebani Telegram/Resend/Google Sheets ---
+    const isHuman = await verifyRecaptcha(recaptcha_token);
+    if (!isHuman) {
+      return res.status(400).json({
+        success: false,
+        error: 'Verifikasi keamanan gagal. Silakan muat ulang halaman dan coba lagi.',
+      });
+    }
 
     // --- Validasi ulang di server, jangan percaya input client ---
     if (full_name.length < 2) {
