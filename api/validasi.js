@@ -67,6 +67,44 @@ async function sendEmail({ to, subject, html, replyTo }) {
   return data;
 }
 
+// Simpan data pendaftar ke Airtable — arsip permanen untuk dipakai lagi nanti
+// (rekap, marketing, dll). Ini TIDAK mengubah apa pun yang user lihat: user
+// tetap cukup submit form ini saja, tidak diarahkan ke mana pun.
+async function saveToAirtable({ full_name, account_number, broker_name, email }) {
+  const apiKey = process.env.AIRTABLE_API_KEY;
+  const baseId = process.env.AIRTABLE_BASE_ID;
+  const tableName = process.env.AIRTABLE_TABLE_NAME || 'Registrants';
+
+  if (!apiKey || !baseId) {
+    console.warn('Airtable belum dikonfigurasi, lewati penyimpanan.');
+    return;
+  }
+
+  const url = `https://api.airtable.com/v0/${baseId}/${encodeURIComponent(tableName)}`;
+
+  const res = await fetch(url, {
+    method: 'POST',
+    headers: {
+      Authorization: `Bearer ${apiKey}`,
+      'Content-Type': 'application/json',
+    },
+    body: JSON.stringify({
+      fields: {
+        Nama: full_name,
+        'Akun Trading': account_number,
+        Broker: broker_name,
+        Email: email,
+        'Tanggal Daftar': new Date().toISOString(),
+      },
+    }),
+  });
+
+  if (!res.ok) {
+    const errText = await res.text();
+    throw new Error(`Airtable insert gagal (${res.status}): ${errText}`);
+  }
+}
+
 export default async function handler(req, res) {
   res.setHeader('Access-Control-Allow-Origin', ALLOWED_ORIGIN);
   res.setHeader('Access-Control-Allow-Methods', 'POST, OPTIONS');
@@ -136,8 +174,8 @@ export default async function handler(req, res) {
       <p>— Tim Indorebate</p>
     `;
 
-    // Jalankan Telegram + kedua email secara paralel.
-    // Kalau salah satu gagal, jangan gagalkan seluruh request selama Telegram (jalur utama) berhasil.
+    // Jalankan Telegram + kedua email + simpan Airtable secara paralel.
+    // Kalau salah satu gagal, jangan gagalkan seluruh request selama kedua email (jalur utama) berhasil.
     const results = await Promise.allSettled([
       sendTelegramMessage(telegramText),
       sendEmail({
@@ -151,9 +189,10 @@ export default async function handler(req, res) {
         subject: 'Permintaan Validasi Akun Anda Sudah Diterima — Indorebate',
         html: userEmailHtml,
       }),
+      saveToAirtable({ full_name, account_number, broker_name, email }),
     ]);
 
-    const [telegramResult, adminEmailResult, userEmailResult] = results;
+    const [telegramResult, adminEmailResult, userEmailResult, airtableResult] = results;
 
     if (telegramResult.status === 'rejected') {
       console.error('Telegram gagal:', telegramResult.reason);
@@ -164,10 +203,18 @@ export default async function handler(req, res) {
     if (userEmailResult.status === 'rejected') {
       console.error('Email user gagal:', userEmailResult.reason);
     }
+    if (airtableResult.status === 'rejected') {
+      console.error('Simpan ke Airtable gagal:', airtableResult.reason);
+    }
 
-    // Telegram adalah jalur notifikasi utama — kalau ini gagal, anggap request gagal
-    // supaya kamu tahu ada masalah dan tidak kehilangan submission diam-diam.
-    if (telegramResult.status === 'rejected') {
+    // Email ke admin (omahrebate@gmail.com) dan email konfirmasi ke user
+    // adalah jalur notifikasi utama — kalau salah satunya gagal, anggap
+    // request gagal supaya kamu tahu ada masalah dan tidak kehilangan
+    // submission diam-diam, dan user juga tahu untuk coba lagi kalau
+    // konfirmasinya sendiri gagal terkirim. Telegram dan Airtable dianggap
+    // pelengkap: kalau salah satunya gagal tapi kedua email berhasil,
+    // request tetap dianggap sukses.
+    if (adminEmailResult.status === 'rejected' || userEmailResult.status === 'rejected') {
       return res.status(502).json({
         success: false,
         error: 'Gagal mengirim notifikasi. Silakan coba lagi atau hubungi kami via WhatsApp.',
