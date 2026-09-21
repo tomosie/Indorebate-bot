@@ -22,8 +22,7 @@ function wibMonthString(offsetMonths = 0) {
   return wib.toISOString().slice(0, 7); // YYYY-MM
 }
 
-// Simpan user ID ke Set harian & bulanan (otomatis unik, tidak dobel-hitung
-// kalau user yang sama pencet /start berkali-kali di hari/bulan yang sama)
+// Simpan user ID ke Set harian & bulanan (unik) + counter total akses
 async function logAccess(userId) {
   const today = wibDateString();
   const month = wibMonthString();
@@ -32,11 +31,22 @@ async function logAccess(userId) {
     kv.sadd(`pindahib:users:month:${month}`, userId),
     kv.incr(`pindahib:total:day:${today}`),
     kv.incr(`pindahib:total:month:${month}`),
-    // expire otomatis supaya data lama tidak menumpuk selamanya
     kv.expire(`pindahib:users:day:${today}`, 45 * 24 * 60 * 60),
     kv.expire(`pindahib:users:month:${month}`, 400 * 24 * 60 * 60),
     kv.expire(`pindahib:total:day:${today}`, 45 * 24 * 60 * 60),
     kv.expire(`pindahib:total:month:${month}`, 400 * 24 * 60 * 60),
+  ]);
+}
+
+// Catat pilihan broker (untuk breakdown per-broker di laporan)
+async function logBrokerChoice(brokerKey) {
+  const today = wibDateString();
+  const month = wibMonthString();
+  await Promise.all([
+    kv.incr(`pindahib:broker:day:${today}:${brokerKey}`),
+    kv.incr(`pindahib:broker:month:${month}:${brokerKey}`),
+    kv.expire(`pindahib:broker:day:${today}:${brokerKey}`, 45 * 24 * 60 * 60),
+    kv.expire(`pindahib:broker:month:${month}:${brokerKey}`, 400 * 24 * 60 * 60),
   ]);
 }
 
@@ -70,6 +80,10 @@ const BROKER_LINKS = {
     name: 'XM Global',
     url: 'https://indorebate.com/pindah-ib-xm.html',
   },
+  pindah_tmgm: {
+    name: 'TMGM',
+    url: 'https://indorebate.com/pindah-ib-tmgm.html',
+  },
 };
 
 function buildBrokerKeyboard() {
@@ -86,7 +100,10 @@ function buildBrokerKeyboard() {
       Markup.button.callback('JustMarkets', 'pindah_justmarkets'),
       Markup.button.callback('RoboForex', 'pindah_roboforex'),
     ],
-    [Markup.button.callback('XM Global', 'pindah_xm')],
+    [
+      Markup.button.callback('XM Global', 'pindah_xm'),
+      Markup.button.callback('TMGM', 'pindah_tmgm'),
+    ],
   ]);
 }
 
@@ -100,18 +117,6 @@ bot.start(async (ctx) => {
     { parse_mode: 'Markdown', ...buildBrokerKeyboard() }
   );
 });
-
-// Catat pilihan broker (untuk breakdown per-broker di laporan)
-async function logBrokerChoice(brokerKey) {
-  const today = wibDateString();
-  const month = wibMonthString();
-  await Promise.all([
-    kv.incr(`pindahib:broker:day:${today}:${brokerKey}`),
-    kv.incr(`pindahib:broker:month:${month}:${brokerKey}`),
-    kv.expire(`pindahib:broker:day:${today}:${brokerKey}`, 45 * 24 * 60 * 60),
-    kv.expire(`pindahib:broker:month:${month}:${brokerKey}`, 400 * 24 * 60 * 60),
-  ]);
-}
 
 // Satu handler untuk semua tombol broker (regex cocokkan semua callback_data
 // yang diawali "pindah_")
