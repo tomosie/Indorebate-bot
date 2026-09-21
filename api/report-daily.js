@@ -12,6 +12,7 @@ const BROKERS = [
   { key: 'pindah_justmarkets', name: 'JustMarkets' },
   { key: 'pindah_roboforex', name: 'RoboForex' },
   { key: 'pindah_xm', name: 'XM Global' },
+  { key: 'pindah_tmgm', name: 'TMGM' },
 ];
 
 function wibDateString(offsetDays = 0) {
