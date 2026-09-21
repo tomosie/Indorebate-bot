@@ -13,7 +13,7 @@
 const ALLOWED_ORIGIN = 'https://indorebate.com';
 
 const ALLOWED_BROKERS = [
-  'Headway', 'Exness', 'HFM', 'Tickmill', 'JustMarkets', 'RoboForex', 'XM Global',
+  'Headway', 'Exness', 'HFM', 'Tickmill', 'JustMarkets', 'RoboForex', 'XM Global', 'TMGM',
 ];
 
 function escapeHtml(str) {
@@ -67,41 +67,39 @@ async function sendEmail({ to, subject, html, replyTo }) {
   return data;
 }
 
-// Simpan data pendaftar ke Airtable — arsip permanen untuk dipakai lagi nanti
-// (rekap, marketing, dll). Ini TIDAK mengubah apa pun yang user lihat: user
-// tetap cukup submit form ini saja, tidak diarahkan ke mana pun.
-async function saveToAirtable({ full_name, account_number, broker_name, email }) {
-  const apiKey = process.env.AIRTABLE_API_KEY;
-  const baseId = process.env.AIRTABLE_BASE_ID;
-  const tableName = process.env.AIRTABLE_TABLE_NAME || 'Registrants';
+// Simpan data pendaftar ke Google Sheets (lewat Apps Script Web App) — arsip
+// permanen untuk dipakai lagi nanti (rekap, marketing, dll). Ini TIDAK
+// mengubah apa pun yang user lihat: user tetap cukup submit form ini saja,
+// tidak diarahkan ke mana pun.
+async function saveToGoogleSheet({ full_name, account_number, broker_name, email }) {
+  const webhookUrl = process.env.GOOGLE_SHEET_WEBHOOK_URL;
 
-  if (!apiKey || !baseId) {
-    console.warn('Airtable belum dikonfigurasi, lewati penyimpanan.');
+  if (!webhookUrl) {
+    console.warn('Google Sheet webhook belum dikonfigurasi, lewati penyimpanan.');
     return;
   }
 
-  const url = `https://api.airtable.com/v0/${baseId}/${encodeURIComponent(tableName)}`;
-
-  const res = await fetch(url, {
+  const res = await fetch(webhookUrl, {
     method: 'POST',
-    headers: {
-      Authorization: `Bearer ${apiKey}`,
-      'Content-Type': 'application/json',
-    },
+    headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({
-      fields: {
-        Nama: full_name,
-        'Akun Trading': account_number,
-        Broker: broker_name,
-        Email: email,
-        'Tanggal Daftar': new Date().toISOString(),
-      },
+      full_name,
+      account_number,
+      broker_name,
+      email,
+      tanggal_daftar: new Date().toISOString(),
     }),
   });
 
-  if (!res.ok) {
-    const errText = await res.text();
-    throw new Error(`Airtable insert gagal (${res.status}): ${errText}`);
+  const text = await res.text();
+  let data;
+  try {
+    data = JSON.parse(text);
+  } catch {
+    throw new Error(`Google Sheet webhook respons tidak valid: ${text}`);
+  }
+  if (!data.success) {
+    throw new Error(`Google Sheet webhook gagal: ${text}`);
   }
 }
 
@@ -189,10 +187,10 @@ export default async function handler(req, res) {
         subject: 'Permintaan Validasi Akun Anda Sudah Diterima — Indorebate',
         html: userEmailHtml,
       }),
-      saveToAirtable({ full_name, account_number, broker_name, email }),
+      saveToGoogleSheet({ full_name, account_number, broker_name, email }),
     ]);
 
-    const [telegramResult, adminEmailResult, userEmailResult, airtableResult] = results;
+    const [telegramResult, adminEmailResult, userEmailResult, sheetResult] = results;
 
     if (telegramResult.status === 'rejected') {
       console.error('Telegram gagal:', telegramResult.reason);
@@ -203,17 +201,17 @@ export default async function handler(req, res) {
     if (userEmailResult.status === 'rejected') {
       console.error('Email user gagal:', userEmailResult.reason);
     }
-    if (airtableResult.status === 'rejected') {
-      console.error('Simpan ke Airtable gagal:', airtableResult.reason);
+    if (sheetResult.status === 'rejected') {
+      console.error('Simpan ke Google Sheet gagal:', sheetResult.reason);
     }
 
     // Email ke admin (omahrebate@gmail.com) dan email konfirmasi ke user
     // adalah jalur notifikasi utama — kalau salah satunya gagal, anggap
     // request gagal supaya kamu tahu ada masalah dan tidak kehilangan
     // submission diam-diam, dan user juga tahu untuk coba lagi kalau
-    // konfirmasinya sendiri gagal terkirim. Telegram dan Airtable dianggap
-    // pelengkap: kalau salah satunya gagal tapi kedua email berhasil,
-    // request tetap dianggap sukses.
+    // konfirmasinya sendiri gagal terkirim. Telegram dan Google Sheet
+    // dianggap pelengkap: kalau salah satunya gagal tapi kedua email
+    // berhasil, request tetap dianggap sukses.
     if (adminEmailResult.status === 'rejected' || userEmailResult.status === 'rejected') {
       return res.status(502).json({
         success: false,
