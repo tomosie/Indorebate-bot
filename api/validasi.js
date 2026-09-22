@@ -2,19 +2,54 @@
 // Endpoint pengganti Formspree untuk form validasi akun di indorebate.com/validasi.html
 //
 // ENV VARS yang dipakai (mengikuti penamaan yang sudah ada di project indorebate-bot):
-//   BOT_TOKEN         -> token bot Telegram yang sudah ada (Jul 1), dipakai ulang
-//   VALIDASI_CHAT_ID  -> chat_id channel "Validasi Indorebate" (-1003933395442)
-//   RESEND_API_KEY    -> sudah ada di project ini
-//   RESEND_FROM_EMAIL -> sudah ada di project ini, isinya "Indorebate Validasi <noreply@indorebate.com>"
-//   ADMIN_EMAIL       -> omahrebate@gmail.com, penerima notifikasi admin
+//   BOT_TOKEN            -> token bot Telegram yang sudah ada (Jul 1), dipakai ulang
+//   VALIDASI_CHAT_ID     -> chat_id channel "Validasi Indorebate" (-1003933395442)
+//   RESEND_API_KEY       -> sudah ada di project ini
+//   RESEND_FROM_EMAIL    -> sudah ada di project ini, isinya "Indorebate Validasi <noreply@indorebate.com>"
+//   ADMIN_EMAIL          -> omahrebate@gmail.com, penerima notifikasi admin
+//   TURNSTILE_SECRET_KEY -> BARU. Secret key dari https://dash.cloudflare.com/?to=/:account/turnstile
+//                           (pasangan dari site key yang dipasang di validasi.html). JANGAN taruh
+//                           di client, hanya sebagai env var Vercel.
 //
 // ALLOWED_ORIGIN di-hardcode langsung di kode (bukan env var) karena nilainya tidak akan berubah.
+
+// Vercel (paket Hobby) secara default MEMATIKAN serverless function setelah
+// 10 detik walau kode di dalamnya belum selesai. Handler ini sendiri
+// (verifikasi Turnstile + kirim Telegram + 2 email + simpan Google Sheet)
+// dalam kondisi normal makan waktu ~5-15 detik, dan bisa lebih lama lagi
+// kalau kena cold start. Kalau function dimatikan Vercel di tengah jalan,
+// browser user tidak akan pernah menerima respons -> terlihat seperti form
+// "macet"/error padahal sebenarnya prosesnya sedang berjalan (dan mungkin
+// tetap selesai di background, tapi user tidak pernah tahu hasilnya).
+// Baris ini menaikkan batas waktu function menjadi 30 detik (masih di
+// bawah batas maksimum 60 detik yang diizinkan di paket Hobby tanpa perlu
+// upgrade plan) supaya function benar-benar sempat mengirim respons balik
+// sebelum di-timeout paksa oleh platform.
+export const config = {
+  maxDuration: 30,
+};
 
 const ALLOWED_ORIGIN = 'https://indorebate.com';
 
 const ALLOWED_BROKERS = [
   'Headway', 'Exness', 'HFM', 'Tickmill', 'JustMarkets', 'RoboForex', 'XM Global', 'TMGM',
 ];
+
+// Timeout (ms) untuk setiap panggilan keluar. Tanpa ini, kalau salah satu
+// layanan pihak ketiga (Cloudflare, Telegram, Resend, Google Sheet) lambat
+// atau hang, seluruh request bisa menggantung sampai batas waktu Vercel,
+// dan di sisi user form terlihat "macet" di tombol MENGIRIM... Fungsi
+// fetchWithTimeout ini yang memastikan kita selalu gagal-cepat dengan jelas
+// alih-alih menggantung tanpa batas.
+async function fetchWithTimeout(url, options, timeoutMs) {
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), timeoutMs);
+  try {
+    return await fetch(url, { ...options, signal: controller.signal });
+  } finally {
+    clearTimeout(timer);
+  }
+}
 
 function escapeHtml(str) {
   return String(str).replace(/[&<>"']/g, (c) => ({
@@ -26,12 +61,54 @@ function isValidEmail(email) {
   return /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email);
 }
 
+// --- Anti-spam: verifikasi token Cloudflare Turnstile dari client ---
+// Fail closed: kalau secret belum diset, atau Cloudflare tidak merespons
+// dalam waktu wajar, atau token tidak valid -> tolak submission. Lebih
+// aman menolak request asli yang jarang terjadi (bisa retry) daripada
+// diam-diam membuka celah spam kalau verifikasi gagal karena alasan lain.
+async function verifyTurnstile(token, remoteIp) {
+  const secret = process.env.TURNSTILE_SECRET_KEY;
+  if (!secret) {
+    throw new Error('TURNSTILE_SECRET_KEY belum diset di environment variables.');
+  }
+  if (!token || typeof token !== 'string') {
+    return { success: false, reason: 'missing-token' };
+  }
+
+  const body = new URLSearchParams();
+  body.append('secret', secret);
+  body.append('response', token);
+  if (remoteIp) body.append('remoteip', remoteIp);
+
+  let res;
+  try {
+    res = await fetchWithTimeout(
+      'https://challenges.cloudflare.com/turnstile/v0/siteverify',
+      { method: 'POST', body },
+      6000
+    );
+  } catch (err) {
+    // Timeout / network error ke Cloudflare -> anggap gagal verifikasi,
+    // tapi jangan sampai request user menggantung menunggunya.
+    return { success: false, reason: 'verify-request-failed' };
+  }
+
+  let data;
+  try {
+    data = await res.json();
+  } catch (err) {
+    return { success: false, reason: 'verify-bad-response' };
+  }
+
+  return { success: !!data.success, reason: data['error-codes'] || null };
+}
+
 async function sendTelegramMessage(text) {
   const token = process.env.BOT_TOKEN;
   const chatId = process.env.VALIDASI_CHAT_ID;
   if (!token || !chatId) throw new Error('Telegram env vars belum diset (BOT_TOKEN / VALIDASI_CHAT_ID)');
 
-  const res = await fetch(`https://api.telegram.org/bot${token}/sendMessage`, {
+  const res = await fetchWithTimeout(`https://api.telegram.org/bot${token}/sendMessage`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({
@@ -40,7 +117,7 @@ async function sendTelegramMessage(text) {
       parse_mode: 'HTML',
       disable_web_page_preview: true,
     }),
-  });
+  }, 8000);
   const data = await res.json();
   if (!data.ok) throw new Error('Telegram API error: ' + JSON.stringify(data));
   return data;
@@ -54,14 +131,14 @@ async function sendEmail({ to, subject, html, replyTo }) {
   const payload = { from, to, subject, html };
   if (replyTo) payload.reply_to = replyTo;
 
-  const res = await fetch('https://api.resend.com/emails', {
+  const res = await fetchWithTimeout('https://api.resend.com/emails', {
     method: 'POST',
     headers: {
       Authorization: `Bearer ${apiKey}`,
       'Content-Type': 'application/json',
     },
     body: JSON.stringify(payload),
-  });
+  }, 8000);
   const data = await res.json();
   if (!res.ok) throw new Error('Resend API error: ' + JSON.stringify(data));
   return data;
@@ -79,7 +156,7 @@ async function saveToGoogleSheet({ full_name, account_number, broker_name, email
     return;
   }
 
-  const res = await fetch(webhookUrl, {
+  const res = await fetchWithTimeout(webhookUrl, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({
@@ -89,7 +166,7 @@ async function saveToGoogleSheet({ full_name, account_number, broker_name, email
       email,
       tanggal_daftar: new Date().toISOString(),
     }),
-  });
+  }, 8000);
 
   const text = await res.text();
   let data;
@@ -122,6 +199,14 @@ export default async function handler(req, res) {
     const account_number = typeof body.account_number === 'string' ? body.account_number.trim() : '';
     const broker_name = typeof body.broker_name === 'string' ? body.broker_name.trim() : '';
     const email = typeof body.email === 'string' ? body.email.trim() : '';
+    const turnstileToken = typeof body.cf_turnstile_response === 'string' ? body.cf_turnstile_response : '';
+    // Honeypot: field ini tidak pernah terlihat/terisi oleh user asli.
+    // Kalau terisi, diam-diam balas "sukses" tanpa memproses apa pun,
+    // supaya bot tidak tahu ia terdeteksi dan tidak mencoba variasi lain.
+    const honeypot = typeof body.website === 'string' ? body.website.trim() : '';
+    if (honeypot) {
+      return res.status(200).json({ success: true });
+    }
 
     // --- Validasi ulang di server, jangan percaya input client ---
     if (full_name.length < 2) {
@@ -135,6 +220,29 @@ export default async function handler(req, res) {
     }
     if (!isValidEmail(email)) {
       return res.status(400).json({ success: false, error: 'Email tidak valid.' });
+    }
+
+    // --- Anti-spam: captcha wajib valid sebelum lanjut ---
+    const remoteIp = (req.headers['x-forwarded-for'] || '').split(',')[0].trim() || undefined;
+    let turnstileResult;
+    try {
+      turnstileResult = await verifyTurnstile(turnstileToken, remoteIp);
+    } catch (err) {
+      // TURNSTILE_SECRET_KEY belum diset -> ini kesalahan konfigurasi kita,
+      // bukan kesalahan user. Log jelas supaya ketahuan saat setup, tapi
+      // jangan buat user menunggu tanpa jawaban.
+      console.error('Turnstile config error:', err);
+      return res.status(500).json({
+        success: false,
+        error: 'Verifikasi keamanan belum dikonfigurasi. Hubungi admin.',
+      });
+    }
+    if (!turnstileResult.success) {
+      console.warn('Turnstile verification failed:', turnstileResult.reason);
+      return res.status(400).json({
+        success: false,
+        error: 'Verifikasi keamanan gagal atau kedaluwarsa. Silakan muat ulang halaman dan coba lagi.',
+      });
     }
 
     const now = new Date().toLocaleString('id-ID', {
@@ -172,7 +280,7 @@ export default async function handler(req, res) {
       <p>— Tim Indorebate</p>
     `;
 
-    // Jalankan Telegram + kedua email + simpan Airtable secara paralel.
+    // Jalankan Telegram + kedua email + simpan Google Sheet secara paralel.
     // Kalau salah satu gagal, jangan gagalkan seluruh request selama kedua email (jalur utama) berhasil.
     const results = await Promise.allSettled([
       sendTelegramMessage(telegramText),
