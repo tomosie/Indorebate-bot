@@ -313,14 +313,16 @@ export default async function handler(req, res) {
       console.error('Simpan ke Google Sheet gagal:', sheetResult.reason);
     }
 
-    // Email ke admin (omahrebate@gmail.com) dan email konfirmasi ke user
-    // adalah jalur notifikasi utama — kalau salah satunya gagal, anggap
-    // request gagal supaya kamu tahu ada masalah dan tidak kehilangan
-    // submission diam-diam, dan user juga tahu untuk coba lagi kalau
-    // konfirmasinya sendiri gagal terkirim. Telegram dan Google Sheet
-    // dianggap pelengkap: kalau salah satunya gagal tapi kedua email
-    // berhasil, request tetap dianggap sukses.
-    if (adminEmailResult.status === 'rejected' || userEmailResult.status === 'rejected') {
+    // Telegram (channel "Validasi Indorebate") adalah jalur notifikasi UTAMA
+    // sekarang — ini yang paling sering dipantau dan paling jarang bermasalah.
+    // Kalau Telegram gagal terkirim, anggap request gagal supaya submission
+    // tidak hilang diam-diam dan user tahu untuk coba lagi.
+    //
+    // Email (lewat Resend) dan Google Sheet dianggap PELENGKAP/best-effort:
+    // kuota Resend bisa habis sewaktu-waktu dan itu di luar kendali endpoint
+    // ini, jadi kegagalan email TIDAK membatalkan submission selama Telegram
+    // berhasil. Begitu juga Google Sheet.
+    if (telegramResult.status === 'rejected') {
       return res.status(502).json({
         success: false,
         error: 'Gagal mengirim notifikasi. Silakan coba lagi atau hubungi kami via WhatsApp.',
