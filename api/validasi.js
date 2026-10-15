@@ -275,7 +275,7 @@ export default async function handler(req, res) {
         <li><strong>No. Akun:</strong> ${escapeHtml(account_number)}</li>
         <li><strong>Broker:</strong> ${escapeHtml(broker_name)}</li>
       </ul>
-      <p>Tim kami akan memproses validasi ini dalam waktu 1x24 jam. Untuk mempercepat proses, jangan lupa kirim juga konfirmasi via tombol <strong>KONFIRMASI REBATE</strong> di halaman validasi (WhatsApp).</p>
+      <p>Tim kami akan memproses validasi ini dalam waktu 1x24 jam.</p>
       <p>Jika Anda tidak merasa mengirim permintaan ini, abaikan email ini.</p>
       <p>— Tim Indorebate</p>
     `;
