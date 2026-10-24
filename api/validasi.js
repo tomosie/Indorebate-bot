@@ -325,7 +325,7 @@ export default async function handler(req, res) {
     if (telegramResult.status === 'rejected') {
       return res.status(502).json({
         success: false,
-        error: 'Gagal mengirim notifikasi. Silakan coba lagi atau hubungi kami via WhatsApp.',
+        error: 'Data validasi belum berhasil terkirim. Silakan coba lagi dalam beberapa saat, atau hubungi kami via Telegram (@omahrebate).',
       });
     }
 
