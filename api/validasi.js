@@ -286,7 +286,7 @@ export default async function handler(req, res) {
       sendTelegramMessage(telegramText),
       sendEmail({
         to: process.env.ADMIN_EMAIL,
-        subject: `Validasi Akun Baru — ${full_name}`,
+        subject: `Validasi Akun Baru — ${account_number} — ${full_name}`,
         html: adminEmailHtml,
         replyTo: email, // reply dari email admin akan otomatis terarah ke email client
       }),
