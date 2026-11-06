@@ -76,6 +76,7 @@ const TEXT = {
       '👋 Selamat datang di *IndoRebate*!\n\n' +
       'Mau pindah IB ke broker apa? Silakan pilih salah satu di bawah ini:',
     unknown: 'Pilihan tidak dikenali, coba lagi ya.',
+    back: '↩️ Pilih broker lain',
     preparing: (name) => `Menyiapkan link ${name}...`,
     chosen: (name, url) =>
       `✅ Kamu memilih pindah IB ke *${name}*.\n\n` +
@@ -86,6 +87,7 @@ const TEXT = {
       '👋 Welcome to *IndoRebate*!\n\n' +
       'Which broker would you like to switch your IB to? Please choose one below:',
     unknown: 'Choice not recognized, please try again.',
+    back: '↩️ Choose another broker',
     preparing: (name) => `Preparing your ${name} link...`,
     chosen: (name, url) =>
       `✅ You chose to switch your IB to *${name}*.\n\n` +
@@ -115,6 +117,13 @@ function buildBrokerKeyboard(lang = 'id') {
   ]);
 }
 
+// Setelah user memilih broker, pesan diganti dengan link + satu tombol untuk
+// kembali ke daftar broker (supaya salah klik bisa diperbaiki).
+function buildBackKeyboard(lang) {
+  const data = lang === 'en' ? 'pindah_en_back' : 'pindah_back';
+  return Markup.inlineKeyboard([[Markup.button.callback(TEXT[lang].back, data)]]);
+}
+
 // ============ HANDLERS ============
 
 bot.start(async (ctx) => {
@@ -133,6 +142,16 @@ bot.action(/^pindah_.+/, async (ctx) => {
   const lang = data.startsWith('pindah_en_') ? 'en' : 'id';
   // normalisasi ke kunci standar "pindah_<broker>" (dipakai statistik & laporan)
   const brokerKey = lang === 'en' ? data.replace('pindah_en_', 'pindah_') : data;
+  // Tombol "pilih broker lain": tampilkan lagi sapaan + daftar broker
+  if (brokerKey === 'pindah_back') {
+    await ctx.answerCbQuery();
+    await ctx.editMessageText(TEXT[lang].welcome, {
+      parse_mode: 'Markdown',
+      ...buildBrokerKeyboard(lang),
+    });
+    return;
+  }
+
   const broker = BROKER_LINKS[brokerKey];
 
   if (!broker) {
@@ -145,7 +164,7 @@ bot.action(/^pindah_.+/, async (ctx) => {
 
   await ctx.editMessageText(
     TEXT[lang].chosen(broker.name, brokerUrl(brokerKey, lang)),
-    { parse_mode: 'Markdown' }
+    { parse_mode: 'Markdown', ...buildBackKeyboard(lang) }
   );
 });
 
