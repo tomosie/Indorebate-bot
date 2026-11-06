@@ -200,6 +200,9 @@ export default async function handler(req, res) {
     const broker_name = typeof body.broker_name === 'string' ? body.broker_name.trim() : '';
     const email = typeof body.email === 'string' ? body.email.trim() : '';
     const turnstileToken = typeof body.cf_turnstile_response === 'string' ? body.cf_turnstile_response : '';
+    // Bahasa halaman asal form ('en' dari /en/validasi.html). Selain 'en' dianggap Indonesia.
+    // Hanya mempengaruhi bahasa email; validasi dan notifikasi Telegram tidak berubah.
+    const lang = body.lang === 'en' ? 'en' : 'id';
     // Honeypot: field ini tidak pernah terlihat/terisi oleh user asli.
     // Kalau terisi, diam-diam balas "sukses" tanpa memproses apa pun,
     // supaya bot tidak tahu ia terdeteksi dan tidak mencoba variasi lain.
@@ -248,6 +251,10 @@ export default async function handler(req, res) {
     const now = new Date().toLocaleString('id-ID', {
       timeZone: 'Asia/Jakarta', dateStyle: 'medium', timeStyle: 'short',
     });
+    // Waktu untuk email versi Inggris (Telegram tetap pakai `now` berbahasa Indonesia).
+    const nowEn = new Date().toLocaleString('en-GB', {
+      timeZone: 'Asia/Jakarta', dateStyle: 'medium', timeStyle: 'short',
+    });
 
     // --- 1. Kirim notifikasi ke Telegram (channel khusus validasi) ---
     const telegramText =
@@ -259,7 +266,18 @@ export default async function handler(req, res) {
       `🕒 ${now} WIB`;
 
     // --- 2 & 3. Kirim email ke admin (detail lengkap) & ke user (konfirmasi) ---
-    const adminEmailHtml = `
+    // Bahasa email mengikuti halaman asal form (lang = 'en' atau 'id').
+    const adminEmailHtml = lang === 'en'
+      ? `
+      <h2>New Account Validation (English form)</h2>
+      <p><strong>Name:</strong> ${escapeHtml(full_name)}</p>
+      <p><strong>Account No.:</strong> ${escapeHtml(account_number)}</p>
+      <p><strong>Broker:</strong> ${escapeHtml(broker_name)}</p>
+      <p><strong>Email:</strong> ${escapeHtml(email)}</p>
+      <p><strong>Time:</strong> ${nowEn} WIB (Jakarta time)</p>
+      <p><strong>Language:</strong> English (this client used the English version of the site)</p>
+    `
+      : `
       <h2>Validasi Akun Baru</h2>
       <p><strong>Nama:</strong> ${escapeHtml(full_name)}</p>
       <p><strong>No. Akun:</strong> ${escapeHtml(account_number)}</p>
@@ -268,7 +286,19 @@ export default async function handler(req, res) {
       <p><strong>Waktu:</strong> ${now} WIB</p>
     `;
 
-    const userEmailHtml = `
+    const userEmailHtml = lang === 'en'
+      ? `
+      <p>Hello ${escapeHtml(full_name)},</p>
+      <p>Thank you, we have received your trading account validation request at <strong>Indorebate</strong> with the following details:</p>
+      <ul>
+        <li><strong>Account No.:</strong> ${escapeHtml(account_number)}</li>
+        <li><strong>Broker:</strong> ${escapeHtml(broker_name)}</li>
+      </ul>
+      <p>Our team will process this validation within 1x24 hours.</p>
+      <p>If you did not submit this request, please ignore this email.</p>
+      <p>— The Indorebate Team</p>
+    `
+      : `
       <p>Halo ${escapeHtml(full_name)},</p>
       <p>Terima kasih, permintaan validasi akun trading Anda di <strong>Indorebate</strong> sudah kami terima dengan detail berikut:</p>
       <ul>
@@ -280,19 +310,26 @@ export default async function handler(req, res) {
       <p>— Tim Indorebate</p>
     `;
 
+    const adminSubject = lang === 'en'
+      ? `New Account Validation (EN) — ${account_number} — ${full_name}`
+      : `Validasi Akun Baru — ${account_number} — ${full_name}`;
+    const userSubject = lang === 'en'
+      ? 'Your Account Validation Request Has Been Received — Indorebate'
+      : 'Permintaan Validasi Akun Anda Sudah Diterima — Indorebate';
+
     // Jalankan Telegram + kedua email + simpan Google Sheet secara paralel.
     // Kalau salah satu gagal, jangan gagalkan seluruh request selama kedua email (jalur utama) berhasil.
     const results = await Promise.allSettled([
       sendTelegramMessage(telegramText),
       sendEmail({
         to: process.env.ADMIN_EMAIL,
-        subject: `Validasi Akun Baru — ${account_number} — ${full_name}`,
+        subject: adminSubject,
         html: adminEmailHtml,
         replyTo: email, // reply dari email admin akan otomatis terarah ke email client
       }),
       sendEmail({
         to: email,
-        subject: 'Permintaan Validasi Akun Anda Sudah Diterima — Indorebate',
+        subject: userSubject,
         html: userEmailHtml,
       }),
       saveToGoogleSheet({ full_name, account_number, broker_name, email }),
