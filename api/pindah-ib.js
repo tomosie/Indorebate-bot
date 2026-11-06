@@ -50,60 +50,68 @@ async function logBrokerChoice(brokerKey) {
   ]);
 }
 
-// Mapping callback_data -> link pindah IB di indorebate.com
+// Mapping broker -> nama + halaman panduan pindah IB di indorebate.com
+// Kunci (pindah_<broker>) TETAP sama untuk kedua bahasa: dipakai untuk statistik
+// (logBrokerChoice) dan harus sinkron dengan daftar BROKERS di report-daily/monthly.js
 const BROKER_LINKS = {
-  pindah_headway: {
-    name: 'Headway',
-    url: 'https://indorebate.com/pindah-ib-headway.html',
+  pindah_headway:    { name: 'Headway',     id: 'pindah-ib-headway.html',    en: 'switch-partner-headway.html' },
+  pindah_exness:     { name: 'Exness',      id: 'pindah-ib-exness.html',     en: 'switch-partner-exness.html' },
+  pindah_hfm:        { name: 'HFM',         id: 'pindah-ib-hfm.html',        en: 'switch-partner-hfm.html' },
+  pindah_tickmill:   { name: 'Tickmill',    id: 'pindah-ib-tickmill.html',   en: 'switch-partner-tickmill.html' },
+  pindah_justmarkets:{ name: 'JustMarkets', id: 'pindah-ib-justmarkets.html',en: 'switch-partner-justmarkets.html' },
+  pindah_roboforex:  { name: 'RoboForex',   id: 'pindah-ib-roboforex.html',  en: 'switch-partner-roboforex.html' },
+  pindah_xm:         { name: 'XM Global',   id: 'pindah-ib-xm.html',         en: 'switch-partner-xm.html' },
+  pindah_tmgm:       { name: 'TMGM',        id: 'pindah-ib-tmgm.html',       en: 'switch-partner-tmgm.html' },
+};
+
+// ============ BAHASA ============
+// Bahasa ditentukan oleh parameter /start dari link di website:
+//   t.me/<bot>?start=pindah     -> Indonesia (default)
+//   t.me/<bot>?start=pindah_en  -> English
+// Bahasa dibawa lewat callback_data tombol (pindah_en_<broker>), jadi tidak perlu
+// menyimpan apa pun di KV. Tombol lama (pindah_<broker>) tetap berfungsi (Indonesia).
+const TEXT = {
+  id: {
+    welcome:
+      '👋 Selamat datang di *IndoRebate*!\n\n' +
+      'Mau pindah IB ke broker apa? Silakan pilih salah satu di bawah ini:',
+    unknown: 'Pilihan tidak dikenali, coba lagi ya.',
+    preparing: (name) => `Menyiapkan link ${name}...`,
+    chosen: (name, url) =>
+      `✅ Kamu memilih pindah IB ke *${name}*.\n\n` +
+      `Silakan lanjutkan proses pindah IB di sini:\n${url}`,
   },
-  pindah_exness: {
-    name: 'Exness',
-    url: 'https://indorebate.com/pindah-ib-exness.html',
-  },
-  pindah_hfm: {
-    name: 'HFM',
-    url: 'https://indorebate.com/pindah-ib-hfm.html',
-  },
-  pindah_tickmill: {
-    name: 'Tickmill',
-    url: 'https://indorebate.com/pindah-ib-tickmill.html',
-  },
-  pindah_justmarkets: {
-    name: 'JustMarkets',
-    url: 'https://indorebate.com/pindah-ib-justmarkets.html',
-  },
-  pindah_roboforex: {
-    name: 'RoboForex',
-    url: 'https://indorebate.com/pindah-ib-roboforex.html',
-  },
-  pindah_xm: {
-    name: 'XM Global',
-    url: 'https://indorebate.com/pindah-ib-xm.html',
-  },
-  pindah_tmgm: {
-    name: 'TMGM',
-    url: 'https://indorebate.com/pindah-ib-tmgm.html',
+  en: {
+    welcome:
+      '👋 Welcome to *IndoRebate*!\n\n' +
+      'Which broker would you like to switch your IB to? Please choose one below:',
+    unknown: 'Choice not recognized, please try again.',
+    preparing: (name) => `Preparing your ${name} link...`,
+    chosen: (name, url) =>
+      `✅ You chose to switch your IB to *${name}*.\n\n` +
+      `Continue the switch process here:\n${url}`,
   },
 };
 
-function buildBrokerKeyboard() {
+function brokerUrl(brokerKey, lang) {
+  const b = BROKER_LINKS[brokerKey];
+  return lang === 'en'
+    ? `https://indorebate.com/en/${b.en}`
+    : `https://indorebate.com/${b.id}`;
+}
+
+// callback_data: Indonesia = "pindah_<broker>", English = "pindah_en_<broker>"
+function cb(brokerKey, lang) {
+  return lang === 'en' ? brokerKey.replace('pindah_', 'pindah_en_') : brokerKey;
+}
+
+function buildBrokerKeyboard(lang = 'id') {
+  const btn = (key) => Markup.button.callback(BROKER_LINKS[key].name, cb(key, lang));
   return Markup.inlineKeyboard([
-    [
-      Markup.button.callback('Headway', 'pindah_headway'),
-      Markup.button.callback('Exness', 'pindah_exness'),
-    ],
-    [
-      Markup.button.callback('HFM', 'pindah_hfm'),
-      Markup.button.callback('Tickmill', 'pindah_tickmill'),
-    ],
-    [
-      Markup.button.callback('JustMarkets', 'pindah_justmarkets'),
-      Markup.button.callback('RoboForex', 'pindah_roboforex'),
-    ],
-    [
-      Markup.button.callback('XM Global', 'pindah_xm'),
-      Markup.button.callback('TMGM', 'pindah_tmgm'),
-    ],
+    [btn('pindah_headway'), btn('pindah_exness')],
+    [btn('pindah_hfm'), btn('pindah_tickmill')],
+    [btn('pindah_justmarkets'), btn('pindah_roboforex')],
+    [btn('pindah_xm'), btn('pindah_tmgm')],
   ]);
 }
 
@@ -111,30 +119,32 @@ function buildBrokerKeyboard() {
 
 bot.start(async (ctx) => {
   await logAccess(ctx.from.id);
-  await ctx.reply(
-    '👋 Selamat datang di *IndoRebate*!\n\n' +
-    'Mau pindah IB ke broker apa? Silakan pilih salah satu di bawah ini:',
-    { parse_mode: 'Markdown', ...buildBrokerKeyboard() }
-  );
+  const lang = ctx.startPayload === 'pindah_en' ? 'en' : 'id';
+  await ctx.reply(TEXT[lang].welcome, {
+    parse_mode: 'Markdown',
+    ...buildBrokerKeyboard(lang),
+  });
 });
 
 // Satu handler untuk semua tombol broker (regex cocokkan semua callback_data
-// yang diawali "pindah_")
+// yang diawali "pindah_", baik versi Indonesia maupun English)
 bot.action(/^pindah_.+/, async (ctx) => {
   const data = ctx.callbackQuery.data;
-  const broker = BROKER_LINKS[data];
+  const lang = data.startsWith('pindah_en_') ? 'en' : 'id';
+  // normalisasi ke kunci standar "pindah_<broker>" (dipakai statistik & laporan)
+  const brokerKey = lang === 'en' ? data.replace('pindah_en_', 'pindah_') : data;
+  const broker = BROKER_LINKS[brokerKey];
 
   if (!broker) {
-    await ctx.answerCbQuery('Pilihan tidak dikenali, coba lagi ya.');
+    await ctx.answerCbQuery(TEXT[lang].unknown);
     return;
   }
 
-  await logBrokerChoice(data);
-  await ctx.answerCbQuery(`Menyiapkan link ${broker.name}...`);
+  await logBrokerChoice(brokerKey);
+  await ctx.answerCbQuery(TEXT[lang].preparing(broker.name));
 
   await ctx.editMessageText(
-    `✅ Kamu memilih pindah IB ke *${broker.name}*.\n\n` +
-    `Silakan lanjutkan proses pindah IB di sini:\n${broker.url}`,
+    TEXT[lang].chosen(broker.name, brokerUrl(brokerKey, lang)),
     { parse_mode: 'Markdown' }
   );
 });
