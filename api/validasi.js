@@ -1,3 +1,5 @@
+import { queueValidasi } from './_lib/validasi-queue.js';
+
 // api/validasi.js
 // Endpoint pengganti Formspree untuk form validasi akun di indorebate.com/validasi.html
 //
@@ -121,6 +123,20 @@ async function sendTelegramMessage(text) {
   const data = await res.json();
   if (!data.ok) throw new Error('Telegram API error: ' + JSON.stringify(data));
   return data;
+}
+
+// Kirim request ke antrian bot baru (pesan Telegram dengan tombol Sukses/Gagal).
+// Kalau gagal (mis. KV atau bot baru bermasalah), jatuh ke notifikasi lama
+// supaya submission tidak hilang. Pesan lama tidak punya tombol: proses manual.
+async function notifyTelegram(telegramText, data) {
+  try {
+    await queueValidasi(data);
+  } catch (err) {
+    console.error('queueValidasi gagal, pakai notifikasi lama:', err);
+    await sendTelegramMessage(
+      telegramText + '\n\n⚠️ Tombol hasil tidak tersedia, balas manual.'
+    );
+  }
 }
 
 async function sendEmail({ to, subject, html, replyTo }) {
@@ -320,7 +336,13 @@ export default async function handler(req, res) {
     // Jalankan Telegram + kedua email + simpan Google Sheet secara paralel.
     // Kalau salah satu gagal, jangan gagalkan seluruh request selama kedua email (jalur utama) berhasil.
     const results = await Promise.allSettled([
-      sendTelegramMessage(telegramText),
+      notifyTelegram(telegramText, {
+        name: full_name,
+        account: account_number,
+        broker: broker_name,
+        email,
+        lang,
+      }),
       sendEmail({
         to: process.env.ADMIN_EMAIL,
         subject: adminSubject,
