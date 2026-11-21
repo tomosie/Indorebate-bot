@@ -9,7 +9,7 @@ import { pendingText, startKeyboard } from "./_lib/validasi-queue.js";
 export const config = { maxDuration: 30 };
 
 const answer = (id, text, alert = false) =>
-  tg("answerCallbackQuery", { callback_query_id: id, text: text || "", show_alert: alert }).catch(() => {});
+  tg("answerCallbackQuery", { callback_query_id: id, text: String(text || "").slice(0, 190), show_alert: alert }).catch(() => {});
 
 function wibTime(d = new Date()) {
   return new Intl.DateTimeFormat("id-ID", {
@@ -113,11 +113,25 @@ async function handleCallback(cq) {
 
     try {
       const mail = buildEmail({ broker: r.broker, account: r.account, status, reason: reason || "notib", lang: r.lang });
-      await sendReply({ to: r.email, subject: mail.subject, text: mail.text, inReplyTo: r.messageId || undefined });
+      await Promise.race([
+        sendReply({ to: r.email, subject: mail.subject, text: mail.text, inReplyTo: r.messageId || undefined }),
+        new Promise((_, rej) => setTimeout(() => rej(new Error("Gmail tidak merespons dalam 20 detik")), 20000)),
+      ]);
     } catch (e) {
       await kv.del(`vlock:${id}`);
       console.error("Kirim email gagal:", e);
-      return answer(cq.id, `Email GAGAL terkirim: ${String(e.message).slice(0, 150)}. Tekan lagi untuk coba ulang.`, true);
+      const retryKb = {
+        inline_keyboard: [
+          [{ text: status === "sukses" ? "✅ Ya, kirim email SUKSES" : "❌ Ya, kirim email GAGAL", callback_data: cq.data }],
+          backRow,
+        ],
+      };
+      const base = status === "sukses" ? confirmSuccess(r) : confirmFail(r, reason);
+      await edit(cq, `${base}
+
+⚠️ <b>Email gagal terkirim:</b>
+<code>${esc(String(e.message).slice(0, 300))}</code>`, retryKb).catch((er) => console.error("Edit pesan gagal:", er.message));
+      return answer(cq.id, "Email gagal terkirim. Lihat pesan di channel.", true);
     }
 
     const by = cq.from.username ? "@" + cq.from.username : cq.from.first_name || String(cq.from.id);
