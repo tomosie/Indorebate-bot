@@ -1,8 +1,8 @@
 // Webhook bot validasi (bot BARU, token VALIDASI_BOT_TOKEN).
-// Alur tombol: Sukses -> konfirmasi -> kirim | Gagal -> alasan -> konfirmasi -> kirim.
+// Alur tombol: Sukses -> konfirmasi -> kirim | Gagal -> konfirmasi -> kirim (satu jenis balasan gagal).
 import { kv } from "@vercel/kv";
 import { tg, esc } from "./_lib/telegram.js";
-import { buildEmail, FAIL_REASONS } from "./_lib/templates.js";
+import { buildEmail } from "./_lib/templates.js";
 import { sendReply } from "./_lib/mailer.js";
 import { pendingText, startKeyboard } from "./_lib/validasi-queue.js";
 
@@ -34,11 +34,10 @@ Akun <code>${esc(r.account)}</code> (<b>${esc(r.broker)}</b>) <b>ADA di bawah IB
 Kirim email <b>SUKSES</b> ke ${esc(r.email)}?`;
 }
 
-function confirmFail(r, code) {
-  const reason = FAIL_REASONS[code];
+function confirmFail(r) {
   return `⚠️ <b>Konfirmasi GAGAL</b>
 
-Akun <code>${esc(r.account)}</code> (<b>${esc(r.broker)}</b>) <b>${esc(reason.confirm)}</b>.
+Akun <code>${esc(r.account)}</code> (<b>${esc(r.broker)}</b>) <b>TIDAK di bawah IB saya</b>.
 Kirim email <b>GAGAL</b> ke ${esc(r.email)}?`;
 }
 
@@ -60,7 +59,7 @@ async function logSheet(payload) {
 async function handleCallback(cq) {
   const parts = String(cq.data || "").split(":");
   if (parts[0] !== "v") return answer(cq.id);
-  const [, id, act, a1, a2] = parts;
+  const [, id, act, a1] = parts;
 
   // Otorisasi: hanya chat validasi dan hanya user admin yang terdaftar
   if (String(cq.message?.chat?.id) !== String(process.env.VALIDASI_CHAT_ID)) {
@@ -88,31 +87,21 @@ async function handleCallback(cq) {
     return answer(cq.id);
   }
   if (act === "g") {
-    const rows = Object.entries(FAIL_REASONS).map(([code, v]) => [
-      { text: `❌ ${v.label}`, callback_data: `v:${id}:r:${code}` },
-    ]);
-    rows.push(backRow);
-    await edit(cq, `❌ <b>Alasan gagal?</b>\nAkun <code>${esc(r.account)}</code> (<b>${esc(r.broker)}</b>)`, { inline_keyboard: rows });
-    return answer(cq.id);
-  }
-  if (act === "r") {
-    if (!FAIL_REASONS[a1]) return answer(cq.id, "Alasan tidak dikenal", true);
-    await edit(cq, confirmFail(r, a1), {
-      inline_keyboard: [[{ text: "❌ Ya, kirim email GAGAL", callback_data: `v:${id}:y:g:${a1}` }], backRow],
+    await edit(cq, confirmFail(r), {
+      inline_keyboard: [[{ text: "❌ Ya, kirim email GAGAL", callback_data: `v:${id}:y:g` }], backRow],
     });
     return answer(cq.id);
   }
   if (act === "y") {
     const status = a1 === "s" ? "sukses" : a1 === "g" ? "gagal" : null;
-    const reason = status === "gagal" ? a2 : null;
-    if (!status || (status === "gagal" && !FAIL_REASONS[reason])) return answer(cq.id, "Data tombol tidak valid", true);
+    if (!status) return answer(cq.id, "Data tombol tidak valid", true);
 
     // Kunci supaya tap ganda tidak mengirim email dua kali
     const locked = await kv.set(`vlock:${id}`, 1, { nx: true, ex: 120 });
     if (!locked) return answer(cq.id, "Sedang diproses...", false);
 
     try {
-      const mail = buildEmail({ broker: r.broker, account: r.account, status, reason: reason || "notib", lang: r.lang });
+      const mail = buildEmail({ broker: r.broker, account: r.account, status, lang: r.lang });
       await Promise.race([
         sendReply({ to: r.email, subject: mail.subject, text: mail.text, inReplyTo: r.messageId || undefined }),
         new Promise((_, rej) => setTimeout(() => rej(new Error("Gmail tidak merespons dalam 20 detik")), 20000)),
@@ -126,7 +115,7 @@ async function handleCallback(cq) {
           backRow,
         ],
       };
-      const base = status === "sukses" ? confirmSuccess(r) : confirmFail(r, reason);
+      const base = status === "sukses" ? confirmSuccess(r) : confirmFail(r);
       await edit(cq, `${base}
 
 ⚠️ <b>Email gagal terkirim:</b>
@@ -135,10 +124,10 @@ async function handleCallback(cq) {
     }
 
     const by = cq.from.username ? "@" + cq.from.username : cq.from.first_name || String(cq.from.id);
-    const doneRec = { ...r, status: "done", result: status, reason, by, at: new Date().toISOString() };
+    const doneRec = { ...r, status: "done", result: status, by, at: new Date().toISOString() };
     await kv.set(`vreq:${id}`, doneRec, { ex: 60 * 60 * 24 * 90 });
 
-    const label = status === "sukses" ? "✅ SELESAI: SUKSES" : `❌ SELESAI: GAGAL (${FAIL_REASONS[reason].label})`;
+    const label = status === "sukses" ? "✅ SELESAI: SUKSES" : "❌ SELESAI: GAGAL (bukan di bawah IB saya)";
     await edit(cq, `${label}
 
 Broker: <b>${esc(r.broker)}</b>
@@ -149,7 +138,7 @@ ID: <code>${esc(r.id)}</code>`).catch((e) => console.error("Edit pesan gagal:", 
 
     await logSheet({
       id: r.id, broker: r.broker, account: r.account, name: r.name, email: r.email,
-      hasil: status, alasan: reason || "", oleh: by, waktu: doneRec.at,
+      hasil: status, alasan: status === "gagal" ? "bukan di bawah IB" : "", oleh: by, waktu: doneRec.at,
     });
     return answer(cq.id, "Email terkirim ✅");
   }
