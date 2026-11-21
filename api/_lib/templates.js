@@ -23,6 +23,24 @@ const IB_LINKS_EN = {
   TMGM: "https://indorebate.com/en/switch-partner-tmgm.html",
 };
 
+// Catatan penting: arahkan ke Syarat & Ketentuan di halaman rebate masing-masing broker.
+// Anchor: #syarat-ketentuan di rebate-<broker>.html (ID), #terms-conditions di en/rebate-<broker>.html (EN).
+const TERMS_PAGE = {
+  Headway: "headway", Exness: "exness", HFM: "hfm", Tickmill: "tickmill",
+  Justmarkets: "justmarkets", Roboforex: "roboforex", XM: "xm", TMGM: "tmgm",
+};
+const DISPLAY_NAME = { Justmarkets: "JustMarkets", Roboforex: "RoboForex" };
+
+function termsNote(brokerName, lang) {
+  const slug = TERMS_PAGE[brokerName];
+  if (!slug) return "";
+  const name = DISPLAY_NAME[brokerName] || brokerName;
+  if (lang === "en") {
+    return `📌 Important Note:\nPlease read the ${name} Rebate Terms & Conditions at the following link:\nhttps://indorebate.com/en/rebate-${slug}.html#terms-conditions`;
+  }
+  return `📌 Catatan Penting:\nMohon membaca Syarat & Ketentuan Rebate ${name} melalui tautan berikut:\nhttps://indorebate.com/rebate-${slug}.html#syarat-ketentuan`;
+}
+
 export function canonicalBroker(raw) {
   const s = String(raw || "").toLowerCase().replace(/[^a-z]/g, "");
   if (s.startsWith("xm")) return "XM";
@@ -49,7 +67,6 @@ function successText(brokerName, accNum, lang) {
   const isXM = brokerName === "XM";
   const isTickmill = brokerName === "Tickmill";
   const isTMGM = brokerName === "TMGM";
-  const isHFM = brokerName === "HFM";
 
   if (lang === "en") {
     if (isTMGM) {
@@ -68,6 +85,8 @@ You can perform validation on the Indorebate website whenever you create a new t
 
 Rebate calculation starts from the time the account is approved / rebate activation is successful. Previous trades will not be calculated.
 
+${termsNote(brokerName, "en")}
+
 ----------------------------------------
 🎁 Congratulations, you are eligible for Free Tools from Indorebate.
 
@@ -80,8 +99,7 @@ If you have created an account for trading, please contact Indorebate admin What
     let paymentText = "Rebates are paid automatically on an H+1 basis after order closure directly into your Trading Account Balance.";
     if (isXM) paymentText = "Rebates are paid automatically every 24 hours after order closure directly to myWallet.";
     else if (isTickmill) paymentText = "Rebates are paid automatically once a week every Monday into your Trading Account Balance.";
-    let hfm = "";
-    if (isHFM) hfm = `\n\n📌 Important Note:\nPlease read the HFM Rebate Terms & Conditions at the following link:\nhttps://indorebate.com/rebate-hfm.html#syarat-ketentuan`;
+    const hfm = "\n\n" + termsNote(brokerName, "en");
     return `Rebate Validation Successful
 
 Trading Account No : ${accNum}
@@ -119,6 +137,8 @@ Anda bisa melakukan validasi di web indorebate setiap anda membuat akun trading 
 
 Perhitungan rebate dimulai sejak akun disetujui / sukses aktivasi rebate. Untuk trade sebelumnya tidak diperhitungkan
 
+${termsNote(brokerName, "id")}
+
 ----------------------------------------
 🎁 Selamat anda berhak mendapatkan Free Tools dari Indorebate.
 
@@ -132,8 +152,7 @@ Jika anda sudah membuat akun untuk trading silakan hubungi wa admin indorebate u
   let paymentText = "Rebate dibayarkan H+1 setelah penutupan order langsung ke dalam Saldo Akun Trading secara otomatis.";
   if (isXM) paymentText = "Rebate dibayarkan tiap 24 jam setelah penutupan order langsung ke myWallet secara otomatis.";
   else if (isTickmill) paymentText = "Rebate dibayarkan seminggu sekali setiap hari senin ke dalam Saldo Akun Trading secara otomatis.";
-  let hfm = "";
-  if (isHFM) hfm = `\n\n📌 Catatan Penting:\nMohon membaca Syarat & Ketentuan Rebate HFM melalui tautan berikut:\nhttps://indorebate.com/rebate-hfm.html#syarat-ketentuan`;
+  const hfm = "\n\n" + termsNote(brokerName, "id");
   return `Validasi Rebate Sukses
 
 No akun trading : ${accNum}
