@@ -310,7 +310,7 @@ export default async function handler(req, res) {
         <li><strong>Account No.:</strong> ${escapeHtml(account_number)}</li>
         <li><strong>Broker:</strong> ${escapeHtml(broker_name)}</li>
       </ul>
-      <p>Our team will process this validation within 1x24 hours.</p>
+      <p>Our team will process this validation within 1x24 hours. <strong>The validation result (successful or not) will be sent to you by email.</strong> Please also check your Spam folder if the result email does not arrive.</p>
       <p>If you did not submit this request, please ignore this email.</p>
       <p>— The Indorebate Team</p>
     `
@@ -321,7 +321,7 @@ export default async function handler(req, res) {
         <li><strong>No. Akun:</strong> ${escapeHtml(account_number)}</li>
         <li><strong>Broker:</strong> ${escapeHtml(broker_name)}</li>
       </ul>
-      <p>Tim kami akan memproses validasi ini dalam waktu 1x24 jam.</p>
+      <p>Tim kami akan memproses validasi ini dalam waktu 1x24 jam. <strong>Hasil validasi (berhasil atau tidak) akan kami infokan melalui email ini.</strong> Mohon cek juga folder Spam jika email hasil belum masuk.</p>
       <p>Jika Anda tidak merasa mengirim permintaan ini, abaikan email ini.</p>
       <p>— Tim Indorebate</p>
     `;
