@@ -23,13 +23,6 @@ const IB_LINKS_EN = {
   TMGM: "https://indorebate.com/en/switch-partner-tmgm.html",
 };
 
-// Alasan gagal. "notib" = teks lama (bukan di bawah IB). Dua lainnya DRAFT, silakan edit.
-export const FAIL_REASONS = {
-  notib: { label: "Bukan di bawah IB saya", confirm: "TIDAK di bawah IB saya" },
-  notfound: { label: "Akun tidak ditemukan", confirm: "TIDAK ditemukan di portal broker" },
-  wrongbroker: { label: "Broker tidak sesuai", confirm: "BUKAN akun milik broker yang dipilih" },
-};
-
 export function canonicalBroker(raw) {
   const s = String(raw || "").toLowerCase().replace(/[^a-z]/g, "");
   if (s.startsWith("xm")) return "XM";
@@ -162,32 +155,12 @@ Info EA dan Indikator gratis disini:
 https://indorebate.com/tools-gratis.html`;
 }
 
-function failText(brokerName, accNum, lang, reason) {
+function failText(brokerName, accNum, lang) {
   if (lang === "en") {
     const link = IB_LINKS_EN[brokerName] || `https://indorebate.com/en/switch-partner-${brokerName.toLowerCase()}.html`;
     const footer = `----------------------------------------
 🎁 Free EA & Indicators exclusively for Indorebate members
 Full info : https://indorebate.com/en/free-tools.html`;
-    if (reason === "notfound") {
-      return `Validation Failed
-
-Trading Account No : ${accNum}
-Broker : ${brokerName}
-
-We could not find this account number at ${brokerName}. Please check the account number and the broker you selected, then submit the validation again on the Indorebate website.
-
-${footer}`;
-    }
-    if (reason === "wrongbroker") {
-      return `Validation Failed
-
-Trading Account No : ${accNum}
-Broker : ${brokerName}
-
-This account number does not belong to the broker you selected. Please choose the correct broker, then submit the validation again on the Indorebate website.
-
-${footer}`;
-    }
     return `Validation Failed
 
 Trading Account No : ${accNum}
@@ -206,26 +179,6 @@ ${footer}`;
   const footer = `----------------------------------------
 🎁 Free EA & Indikator khusus member Indorebate
 Info lengkap : https://indorebate.com/tools-gratis.html`;
-  if (reason === "notfound") {
-    return `Validasi Gagal
-
-No akun trading : ${accNum}
-Broker : ${brokerName}
-
-No akun anda tidak kami temukan di broker ${brokerName}. Mohon periksa kembali nomor akun dan broker yang anda pilih, lalu ajukan validasi ulang di web indorebate.
-
-${footer}`;
-  }
-  if (reason === "wrongbroker") {
-    return `Validasi Gagal
-
-No akun trading : ${accNum}
-Broker : ${brokerName}
-
-No akun ini bukan milik broker yang anda pilih. Mohon pilih broker yang benar, lalu ajukan validasi ulang di web indorebate.
-
-${footer}`;
-  }
   return `Validasi Gagal
 
 No akun trading : ${accNum}
@@ -240,7 +193,7 @@ Untuk broker ${brokerName} ikuti petunjuk di ${link}
 ${footer}`;
 }
 
-export function buildEmail({ broker, account, status, reason = "notib", lang = "id" }) {
+export function buildEmail({ broker, account, status, lang = "id" }) {
   const brokerName = canonicalBroker(broker);
   if (!brokerName) throw new Error("Broker tidak dikenali: " + broker);
   const acc = String(account || "").trim();
@@ -255,7 +208,7 @@ export function buildEmail({ broker, account, status, reason = "notib", lang = "
   if (status === "gagal") {
     return {
       subject: l === "en" ? `Rebate Validation ${brokerName} #${acc}: FAILED` : `Validasi Rebate ${brokerName} #${acc}: GAGAL`,
-      text: failText(brokerName, acc, l, reason),
+      text: failText(brokerName, acc, l),
     };
   }
   throw new Error("Status tidak valid");
