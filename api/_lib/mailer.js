@@ -19,7 +19,7 @@ function getTransporter() {
   return transporter;
 }
 
-export async function sendReply({ to, subject, text, inReplyTo }) {
+export async function sendReply({ to, subject, text, html, inReplyTo }) {
   const user = process.env.GMAIL_USER;
   const headers = inReplyTo ? { "In-Reply-To": inReplyTo, References: inReplyTo } : undefined;
   return getTransporter().sendMail({
@@ -28,6 +28,7 @@ export async function sendReply({ to, subject, text, inReplyTo }) {
     to,
     subject,
     text,
+    html,
     headers,
   });
 }
