@@ -1,4 +1,5 @@
 import { queueValidasi } from './_lib/validasi-queue.js';
+import { sendReply } from './_lib/mailer.js';
 
 // api/validasi.js
 // Endpoint pengganti Formspree untuk form validasi akun di indorebate.com/validasi.html
@@ -8,7 +9,7 @@ import { queueValidasi } from './_lib/validasi-queue.js';
 //   VALIDASI_CHAT_ID     -> chat_id channel "Validasi Indorebate" (-1003933395442)
 //   RESEND_API_KEY       -> sudah ada di project ini
 //   RESEND_FROM_EMAIL    -> sudah ada di project ini, isinya "Indorebate Validasi <noreply@indorebate.com>"
-//   ADMIN_EMAIL          -> indorebate.support@gmail.com, penerima notifikasi admin
+//   ADMIN_EMAIL          -> omahrebate@gmail.com, penerima notifikasi admin
 //   TURNSTILE_SECRET_KEY -> BARU. Secret key dari https://dash.cloudflare.com/?to=/:account/turnstile
 //                           (pasangan dari site key yang dipasang di validasi.html). JANGAN taruh
 //                           di client, hanya sebagai env var Vercel.
@@ -158,6 +159,31 @@ async function sendEmail({ to, subject, html, replyTo }) {
   const data = await res.json();
   if (!res.ok) throw new Error('Resend API error: ' + JSON.stringify(data));
   return data;
+}
+
+// Email konfirmasi ke user: coba Resend dulu. Kalau gagal (mis. kuota habis atau
+// Resend bermasalah), kirim lewat Gmail (omahrebate@gmail.com) supaya user tetap
+// menerima konfirmasi. Hanya dipakai untuk email ke user, bukan email admin.
+function htmlToPlainText(html) {
+  return html
+    .replace(/<li>/g, '- ')
+    .replace(/<\/(p|li|h2|ul)>/g, '\n')
+    .replace(/<[^>]+>/g, '')
+    .replace(/&lt;/g, '<').replace(/&gt;/g, '>').replace(/&quot;/g, '"').replace(/&#39;/g, "'").replace(/&amp;/g, '&')
+    .split('\n').map((l) => l.trim()).join('\n')
+    .replace(/\n{3,}/g, '\n\n').trim();
+}
+
+async function sendUserConfirmation({ to, subject, html }) {
+  try {
+    return await sendEmail({ to, subject, html });
+  } catch (err) {
+    console.error('Resend gagal untuk email user, coba kirim lewat Gmail:', err);
+  }
+  return await Promise.race([
+    sendReply({ to, subject, text: htmlToPlainText(html), html }),
+    new Promise((_, reject) => setTimeout(() => reject(new Error('Gmail tidak merespons dalam 10 detik')), 10000)),
+  ]);
 }
 
 // Simpan data pendaftar ke Google Sheets (lewat Apps Script Web App) — arsip
@@ -349,7 +375,7 @@ export default async function handler(req, res) {
         html: adminEmailHtml,
         replyTo: email, // reply dari email admin akan otomatis terarah ke email client
       }),
-      sendEmail({
+      sendUserConfirmation({
         to: email,
         subject: userSubject,
         html: userEmailHtml,
