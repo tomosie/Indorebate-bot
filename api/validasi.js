@@ -8,7 +8,7 @@ import { queueValidasi } from './_lib/validasi-queue.js';
 //   VALIDASI_CHAT_ID     -> chat_id channel "Validasi Indorebate" (-1003933395442)
 //   RESEND_API_KEY       -> sudah ada di project ini
 //   RESEND_FROM_EMAIL    -> sudah ada di project ini, isinya "Indorebate Validasi <noreply@indorebate.com>"
-//   ADMIN_EMAIL          -> omahrebate@gmail.com, penerima notifikasi admin
+//   ADMIN_EMAIL          -> indorebate.support@gmail.com, penerima notifikasi admin
 //   TURNSTILE_SECRET_KEY -> BARU. Secret key dari https://dash.cloudflare.com/?to=/:account/turnstile
 //                           (pasangan dari site key yang dipasang di validasi.html). JANGAN taruh
 //                           di client, hanya sebagai env var Vercel.
