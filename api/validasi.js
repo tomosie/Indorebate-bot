@@ -1,5 +1,5 @@
 import { queueValidasi } from './_lib/validasi-queue.js';
-import { sendReply } from './_lib/mailer.js';
+import { sendReply, sendAdminNotice } from './_lib/mailer.js';
 
 // api/validasi.js
 // Endpoint pengganti Formspree untuk form validasi akun di indorebate.com/validasi.html
@@ -9,7 +9,7 @@ import { sendReply } from './_lib/mailer.js';
 //   VALIDASI_CHAT_ID     -> chat_id channel "Validasi Indorebate" (-1003933395442)
 //   RESEND_API_KEY       -> sudah ada di project ini
 //   RESEND_FROM_EMAIL    -> sudah ada di project ini, isinya "Indorebate Validasi <noreply@indorebate.com>"
-//   ADMIN_EMAIL          -> omahrebate@gmail.com, penerima notifikasi admin
+//   ADMIN_EMAIL          -> penerima notifikasi admin (dikirim lewat Gmail, bukan Resend)
 //   TURNSTILE_SECRET_KEY -> BARU. Secret key dari https://dash.cloudflare.com/?to=/:account/turnstile
 //                           (pasangan dari site key yang dipasang di validasi.html). JANGAN taruh
 //                           di client, hanya sebagai env var Vercel.
@@ -183,6 +183,17 @@ async function sendUserConfirmation({ to, subject, html }) {
   return await Promise.race([
     sendReply({ to, subject, text: htmlToPlainText(html), html }),
     new Promise((_, reject) => setTimeout(() => reject(new Error('Gmail tidak merespons dalam 10 detik')), 10000)),
+  ]);
+}
+
+// Email data request ke admin: dikirim lewat Gmail (bukan Resend), supaya kuota Resend
+// hanya terpakai untuk email konfirmasi ke user. Pengirimnya akun ADMIN_SMTP_USER kalau
+// diisi, kalau tidak akun GMAIL_USER. Reply-To diarahkan ke email pendaftar.
+async function sendAdminEmail({ to, subject, html, replyTo }) {
+  if (!to) throw new Error('ADMIN_EMAIL belum diset');
+  return await Promise.race([
+    sendAdminNotice({ to, subject, text: htmlToPlainText(html), html, replyTo }),
+    new Promise((_, reject) => setTimeout(() => reject(new Error('Gmail admin tidak merespons dalam 12 detik')), 12000)),
   ]);
 }
 
@@ -369,7 +380,7 @@ export default async function handler(req, res) {
         email,
         lang,
       }),
-      sendEmail({
+      sendAdminEmail({
         to: process.env.ADMIN_EMAIL,
         subject: adminSubject,
         html: adminEmailHtml,
