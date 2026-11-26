@@ -1,0 +1,120 @@
+// Webhook bot CS Indorebate (bot Telegram terpisah, token CS_BOT_TOKEN).
+// Alur: pesan pengguna -> model AI (basis pengetahuan) -> balasan.
+// Jika model menulis <<ESKALASI|kategori|ringkasan>>, ringkasan dikirim ke admin.
+import { kv } from "@vercel/kv";
+import { esc } from "./_lib/telegram.js";
+import { askModel } from "./_lib/cs-ai.js";
+import { SYSTEM_PROMPT } from "./_lib/cs-prompt.js";
+import { extractEscalation, sanitizeUser, trimHistory } from "./_lib/cs-core.js";
+
+export const config = { maxDuration: 30 };
+
+const API = "https://api.telegram.org";
+const HIST_TTL = 60 * 60 * 24; // riwayat chat hilang otomatis setelah 24 jam
+const HOURLY_LIMIT = 20; // maksimal pesan per pengguna per jam
+
+const GREETING =
+  "Halo! Saya asisten CS Indorebate. Tanyakan seputar rebate, validasi akun, pindah mitra, atau tools gratis. " +
+  "Hello! I'm Indorebate's support assistant, feel free to ask in English too.\n\n" +
+  "Jangan pernah mengirim password trading atau kode OTP di chat ini.";
+const FALLBACK =
+  "Mohon maaf, saya sedang mengalami gangguan. Pertanyaan Anda sudah saya teruskan ke admin dan akan dibalas secepatnya. " +
+  "Anda juga bisa menulis ke support@indorebate.com.";
+const LIMIT_MSG = "Anda sudah mengirim banyak pesan dalam satu jam terakhir. Silakan coba lagi nanti, atau tulis ke support@indorebate.com.";
+
+async function tgCs(method, body) {
+  const token = process.env.CS_BOT_TOKEN;
+  if (!token) throw new Error("CS_BOT_TOKEN belum diset");
+  const r = await fetch(`${API}/bot${token}/${method}`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(body),
+    signal: AbortSignal.timeout(10000),
+  });
+  const data = await r.json().catch(() => ({}));
+  if (!data.ok) throw new Error(`Telegram ${method}: ${data.description || r.status}`);
+  return data.result;
+}
+
+const clip = (s, n) => (String(s).length > n ? String(s).slice(0, n) + "…" : String(s));
+
+async function notifyAdmin({ from, category, summary, history }) {
+  const chatId = process.env.CS_ADMIN_CHAT_ID;
+  if (!chatId) return;
+  const who = [from.first_name, from.last_name].filter(Boolean).join(" ") || "Tanpa nama";
+  const tail = history
+    .slice(-4)
+    .map((m) => `${m.role === "user" ? "👤" : "🤖"} ${esc(clip(m.content, 300))}`)
+    .join("\n");
+  const text = clip(
+    `🆘 <b>CS eskalasi: ${esc(category)}</b>\nDari: ${esc(who)}${from.username ? " (@" + esc(from.username) + ")" : ""} <code>${from.id}</code>\n` +
+      `Ringkasan: ${esc(summary || "-")}\n\n<b>Percakapan terakhir</b>\n${tail}`,
+    3900
+  );
+  const body = { chat_id: chatId, text, parse_mode: "HTML", disable_web_page_preview: true };
+  if (from.username) body.reply_markup = { inline_keyboard: [[{ text: "Buka chat pengguna", url: `https://t.me/${from.username}` }]] };
+  await tgCs("sendMessage", body).catch((e) => console.error("Notif admin gagal:", e.message));
+}
+
+async function handleMessage(msg) {
+  if (msg.chat?.type !== "private") return;
+  const chatId = msg.chat.id;
+  const uid = msg.from.id;
+  const reply = (text) => tgCs("sendMessage", { chat_id: chatId, text: String(text).slice(0, 4000), disable_web_page_preview: true });
+
+  if (typeof msg.text !== "string") {
+    await reply("Maaf, saya hanya bisa membaca pesan teks. Sorry, I can only read text messages.");
+    return;
+  }
+  const raw = msg.text.trim();
+  const histKey = `cs:hist:${chatId}`;
+
+  if (raw === "/start") { await reply(GREETING); return; }
+  if (raw === "/reset") { await kv.del(histKey); await reply("Percakapan direset. Silakan mulai bertanya lagi."); return; }
+
+  // Batas pesan per jam
+  const rlKey = `cs:rl:${uid}:${Math.floor(Date.now() / 3600000)}`;
+  const n = await kv.incr(rlKey);
+  if (n === 1) await kv.expire(rlKey, 3700);
+  if (n > HOURLY_LIMIT) { if (n === HOURLY_LIMIT + 1) await reply(LIMIT_MSG); return; }
+
+  const text = sanitizeUser(raw);
+  if (!text) return;
+
+  const hist = trimHistory(await kv.get(histKey));
+  const messages = [...hist, { role: "user", content: text }];
+  tgCs("sendChatAction", { chat_id: chatId, action: "typing" }).catch(() => {});
+
+  let out;
+  try {
+    out = extractEscalation(await askModel(SYSTEM_PROMPT, messages));
+  } catch (e) {
+    console.error("CS gagal menjawab:", e.message);
+    await reply(FALLBACK);
+    await notifyAdmin({ from: msg.from, category: "teknis", summary: "Semua model gagal menjawab. Pesan pengguna: " + clip(text, 200), history: messages });
+    return;
+  }
+
+  if (!out.reply) out.reply = FALLBACK;
+  await reply(out.reply);
+  const newHist = trimHistory([...messages, { role: "assistant", content: out.reply }]);
+  await kv.set(histKey, newHist, { ex: HIST_TTL });
+  if (out.esc) await notifyAdmin({ from: msg.from, category: out.esc.category, summary: out.esc.summary, history: newHist });
+}
+
+export default async function handler(req, res) {
+  if (req.method !== "POST") return res.status(200).send("ok");
+  const secret = process.env.CS_WEBHOOK_SECRET;
+  if (!secret || req.headers["x-telegram-bot-api-secret-token"] !== secret) {
+    return res.status(401).json({ ok: false });
+  }
+  const msg = req.body?.message;
+  if (msg?.from && !msg.from.is_bot) {
+    try {
+      await handleMessage(msg);
+    } catch (e) {
+      console.error("cs-bot error:", e);
+    }
+  }
+  return res.status(200).json({ ok: true });
+}
