@@ -20,9 +20,31 @@ Versi: 27 November 2026. Sumber: halaman situs indorebate.com. Perbarui file ini
 
 ## 3. Akun baru (cara mendapatkan rebate)
 1. Pilih broker di https://indorebate.com/#broker
-2. Buka akun live lewat link pendaftaran Indorebate (atau masukkan kode mitra saat registrasi).
+2. Buka akun live lewat link pendaftaran Indorebate (lihat bagian 3b) atau masukkan kode mitra saat registrasi.
 3. Validasi akun di https://indorebate.com/validasi.html
 4. Deposit dan trading seperti biasa.
+
+## 3b. Link pendaftaran akun BARU
+Berikan link ini kepada orang yang ingin membuka akun baru. Pakai link bahasa Indonesia untuk pengguna berbahasa Indonesia, dan link bahasa Inggris untuk pengguna berbahasa Inggris. Link TIDAK boleh diubah. Setelah mendaftar, pengguna harus memvalidasi akun di https://indorebate.com/validasi.html (Inggris: https://indorebate.com/en/validate.html).
+Semua broker ada di https://indorebate.com/#broker (Inggris: https://indorebate.com/en/#brokers).
+
+| Broker | Link Indonesia | Link Inggris |
+|---|---|---|
+| Headway | https://headway.partners/user/signup?hwp=fee8fe | sama |
+| Exness | https://one.toexness.com/boarding/sign-up/a/indorbt80?lng=id | https://one.toexness.com/boarding/sign-up/a/indorbt80 |
+| HFM | https://register.hfmtrade-ind.com/sv/id/new-live-account/?refid=194327&acid=j0lkvx65hf | https://register.hfm.com/sv/id/new-live-account/?refid=194327&acid=j0lkvx65hf |
+| Tickmill | https://my.tickmill.com?utm_campaign=ib_link&utm_content=IB64086506&utm_medium=Open+Account&utm_source=link | sama |
+| JustMarkets | https://one.justmarkets.link/a/p29kw0m7xi/id/registration/trader | https://one.justmarkets.link/a/p29kw0m7xi/registration/trader |
+| RoboForex | https://my.roboforex.pro/en/?a=ljhu | https://my.roboforex.com/en/?a=ljhu |
+| XM Global | https://affs.click/oiMAL | https://clicks.pipaffiliates.com/c?c=960798&l=en&p=1 |
+
+TMGM: tidak ada kode mitra, pilih link sesuai jenis akun yang diinginkan (ganti language=id menjadi language=en untuk pengguna berbahasa Inggris):
+- EDGE Cent: https://portal.tmgm-tmc.com/register?node=MzYxNTEz&language=id
+- EDGE USD: https://portal.tmgm-tmc.com/register?node=MzYxNTE3&language=id
+- Classic Cent: https://portal.tmgm-tmc.com/register?node=MzYxNTE0&language=id
+- Classic USD: https://portal.tmgm-tmc.com/register?node=MzYxNTE2&language=id
+- STD Cent: https://portal.tmgm-tmc.com/register?node=MzYxNTE1&language=id
+- STD USD: https://portal.tmgm-tmc.com/register?node=MzYxNTE4&language=id
 
 ## 4. Akun lama (sudah punya akun di broker)
 - Akun yang dibuat TANPA link Indorebate tidak otomatis mendapat rebate, dan divalidasi saja tidak cukup.
