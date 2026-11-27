@@ -49,7 +49,9 @@ const GUESS = [
 ];
 
 export function detectImplicitEscalation(reply, userText) {
-  if (!PROMISE.test(String(reply || ""))) return null;
+  const r = String(reply || "").trim();
+  if (r.slice(-3).includes("?")) return null; // bot masih meminta data, belum waktunya eskalasi
+  if (!PROMISE.test(r)) return null;
   const u = String(userText || "");
   const cat = (GUESS.find(([, re]) => re.test(u)) || ["lainnya"])[0];
   return { category: cat, summary: ("(otomatis) " + u).slice(0, 300) };
