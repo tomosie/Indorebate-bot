@@ -36,10 +36,13 @@ async function tgCs(method, body) {
   return data.result;
 }
 
+// Abaikan spasi dan tanda kutip yang tidak sengaja ikut terketik di Vercel.
+const adminChatId = () => String(process.env.CS_ADMIN_CHAT_ID || "").trim().replace(/^["']+|["']+$/g, "").trim();
+
 const clip = (s, n) => (String(s).length > n ? String(s).slice(0, n) + "…" : String(s));
 
 async function notifyAdmin({ from, category, summary, history }) {
-  const chatId = process.env.CS_ADMIN_CHAT_ID;
+  const chatId = adminChatId();
   if (!chatId) { console.error("CS_ADMIN_CHAT_ID belum diset, eskalasi tidak terkirim"); return false; }
   const who = [from.first_name, from.last_name].filter(Boolean).join(" ") || "Tanpa nama";
   const tail = history
@@ -79,9 +82,9 @@ async function handleMessage(msg) {
   if (raw === "/id") { await reply(`ID chat ini: ${chatId}\nID pengguna: ${uid}`); return; }
   if (raw === "/tesadmin") {
     // Hanya admin: kirim notifikasi uji dan laporkan hasilnya.
-    const adminId = String(process.env.CS_ADMIN_CHAT_ID || "");
+    const adminId = adminChatId();
     if (!adminId) { await reply("CS_ADMIN_CHAT_ID belum diset di Vercel."); return; }
-    if (adminId !== String(chatId) && adminId !== String(uid)) { await reply("Perintah ini hanya untuk admin. Kirim /id untuk melihat ID Anda dan samakan dengan CS_ADMIN_CHAT_ID."); return; }
+    if (adminId !== String(chatId) && adminId !== String(uid)) { await reply(`Perintah ini hanya untuk admin. ID chat Anda: ${chatId}, ID pengguna: ${uid}. Angka ini berbeda dengan CS_ADMIN_CHAT_ID di Vercel. Samakan, lalu Redeploy.`); return; }
     const r = await notifyAdmin({ from: msg.from, category: "lainnya", summary: "Tes notifikasi admin", history: [{ role: "user", content: "tes" }] });
     await reply(r === true ? "Notifikasi uji terkirim ke chat admin." : `Gagal mengirim ke chat admin: ${r}`);
     return;
