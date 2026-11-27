@@ -17,6 +17,12 @@ const GREETING =
   "Halo! Saya asisten CS Indorebate. Tanyakan seputar rebate, validasi akun, pindah mitra, atau tools gratis. " +
   "Hello! I'm Indorebate's support assistant, feel free to ask in English too.\n\n" +
   "Jangan pernah mengirim password trading atau kode OTP di chat ini.";
+const GREETING_ID =
+  "Halo! Saya asisten CS Indorebate. Tanyakan seputar rebate, validasi akun, pindah mitra, atau tools gratis.\n\n" +
+  "Jangan pernah mengirim password trading atau kode OTP di chat ini.";
+const GREETING_EN =
+  "Hello! I'm Indorebate's support assistant. Ask me about rebates, account validation, switching partners, or the free tools.\n\n" +
+  "Never send your trading password or OTP codes in this chat.";
 const FALLBACK =
   "Mohon maaf, saya sedang mengalami gangguan. Pertanyaan Anda sudah saya teruskan ke admin dan akan dibalas secepatnya. " +
   "Anda juga bisa menulis ke support@indorebate.com.";
@@ -80,7 +86,12 @@ async function handleMessage(msg) {
   const raw = msg.text.trim();
   const histKey = `cs:hist:${chatId}`;
 
-  if (raw === "/start") { await reply(GREETING); return; }
+  const start = raw.match(/^\/start(?:@\w+)?(?:\s+(\S+))?$/);
+  if (start) {
+    // Tombol Chat CS di situs memakai ?start=web_id atau ?start=web_en
+    await reply(start[1] === "web_en" ? GREETING_EN : start[1] === "web_id" ? GREETING_ID : GREETING);
+    return;
+  }
   if (raw === "/id") { await reply(`ID chat ini: ${chatId}\nID pengguna: ${uid}`); return; }
   if (raw === "/tesadmin") {
     // Hanya admin: kirim notifikasi uji dan laporkan hasilnya.
