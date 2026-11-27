@@ -5,7 +5,7 @@ import { kv } from "@vercel/kv";
 import { esc } from "./_lib/telegram.js";
 import { askModel } from "./_lib/cs-ai.js";
 import { SYSTEM_PROMPT } from "./_lib/cs-prompt.js";
-import { extractEscalation, sanitizeUser, trimHistory } from "./_lib/cs-core.js";
+import { extractEscalation, detectImplicitEscalation, sanitizeUser, trimHistory } from "./_lib/cs-core.js";
 
 export const config = { maxDuration: 30 };
 
@@ -40,7 +40,7 @@ const clip = (s, n) => (String(s).length > n ? String(s).slice(0, n) + "…" : S
 
 async function notifyAdmin({ from, category, summary, history }) {
   const chatId = process.env.CS_ADMIN_CHAT_ID;
-  if (!chatId) return;
+  if (!chatId) { console.error("CS_ADMIN_CHAT_ID belum diset, eskalasi tidak terkirim"); return false; }
   const who = [from.first_name, from.last_name].filter(Boolean).join(" ") || "Tanpa nama";
   const tail = history
     .slice(-4)
@@ -53,7 +53,13 @@ async function notifyAdmin({ from, category, summary, history }) {
   );
   const body = { chat_id: chatId, text, parse_mode: "HTML", disable_web_page_preview: true };
   if (from.username) body.reply_markup = { inline_keyboard: [[{ text: "Buka chat pengguna", url: `https://t.me/${from.username}` }]] };
-  await tgCs("sendMessage", body).catch((e) => console.error("Notif admin gagal:", e.message));
+  try {
+    await tgCs("sendMessage", body);
+    return true;
+  } catch (e) {
+    console.error("Notif admin gagal:", e.message);
+    return e.message;
+  }
 }
 
 async function handleMessage(msg) {
@@ -70,6 +76,16 @@ async function handleMessage(msg) {
   const histKey = `cs:hist:${chatId}`;
 
   if (raw === "/start") { await reply(GREETING); return; }
+  if (raw === "/id") { await reply(`ID chat ini: ${chatId}\nID pengguna: ${uid}`); return; }
+  if (raw === "/tesadmin") {
+    // Hanya admin: kirim notifikasi uji dan laporkan hasilnya.
+    const adminId = String(process.env.CS_ADMIN_CHAT_ID || "");
+    if (!adminId) { await reply("CS_ADMIN_CHAT_ID belum diset di Vercel."); return; }
+    if (adminId !== String(chatId) && adminId !== String(uid)) { await reply("Perintah ini hanya untuk admin. Kirim /id untuk melihat ID Anda dan samakan dengan CS_ADMIN_CHAT_ID."); return; }
+    const r = await notifyAdmin({ from: msg.from, category: "lainnya", summary: "Tes notifikasi admin", history: [{ role: "user", content: "tes" }] });
+    await reply(r === true ? "Notifikasi uji terkirim ke chat admin." : `Gagal mengirim ke chat admin: ${r}`);
+    return;
+  }
   if (raw === "/reset") { await kv.del(histKey); await reply("Percakapan direset. Silakan mulai bertanya lagi."); return; }
 
   // Batas pesan per jam
@@ -96,6 +112,7 @@ async function handleMessage(msg) {
   }
 
   if (!out.reply) out.reply = FALLBACK;
+  if (!out.esc) out.esc = detectImplicitEscalation(out.reply, text);
   await reply(out.reply);
   const newHist = trimHistory([...messages, { role: "assistant", content: out.reply }]);
   await kv.set(histKey, newHist, { ex: HIST_TTL });
