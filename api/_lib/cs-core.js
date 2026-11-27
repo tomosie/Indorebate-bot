@@ -34,3 +34,23 @@ export function sanitizeUser(text) {
 export function trimHistory(h) {
   return (Array.isArray(h) ? h : []).slice(-MAX_HISTORY);
 }
+
+// Jaring pengaman: model kadang berjanji meneruskan ke admin tanpa menulis penanda.
+// Jika balasan berisi janji seperti itu, anggap sebagai eskalasi.
+const PROMISE =
+  /(teruskan|diteruskan|meneruskan|saya\s+forward|forward(ed)?\s+(this|it|your)|pass(ed)?\s+(this|it|your)[^.\n]{0,25}\s+(on\s+)?to\s+(the\s+)?admin)[^.\n]{0,60}admin|admin[^.\n]{0,60}(menindaklanjuti|akan\s+(membalas|menghubungi|mengecek|memeriksa)|will\s+(get\s+back|reply|follow|check|contact))|(hubungi|tulis\s+ke)\s+admin/i;
+
+const GUESS = [
+  ["pembayaran", /bayar|payout|withdraw|wd\b|rebate\s+(belum|tidak)|belum\s+masuk|payment|not\s+received/i],
+  ["keluhan", /komplain|kecewa|kesal|marah|penipu|scam|complain|refund|angry/i],
+  ["teknis", /error|bug|tidak\s+bisa\s+(dibuka|diakses)|rusak|gagal\s+(login|submit)|not\s+working/i],
+  ["kerjasama", /kerja\s*sama|kemitraan|partnership|media|iklan|sponsor/i],
+  ["akun", /akun|validasi|account|valid|pindah\s+mitra|ditolak|rejected/i],
+];
+
+export function detectImplicitEscalation(reply, userText) {
+  if (!PROMISE.test(String(reply || ""))) return null;
+  const u = String(userText || "");
+  const cat = (GUESS.find(([, re]) => re.test(u)) || ["lainnya"])[0];
+  return { category: cat, summary: ("(otomatis) " + u).slice(0, 300) };
+}
