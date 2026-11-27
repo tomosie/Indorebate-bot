@@ -41,27 +41,29 @@ const adminChatId = () => String(process.env.CS_ADMIN_CHAT_ID || "").trim().repl
 
 const clip = (s, n) => (String(s).length > n ? String(s).slice(0, n) + "…" : String(s));
 
-async function notifyAdmin({ from, category, summary, history }) {
+async function notifyAdmin({ from, category, summary, history, replyTo }) {
   const chatId = adminChatId();
-  if (!chatId) { console.error("CS_ADMIN_CHAT_ID belum diset, eskalasi tidak terkirim"); return false; }
+  if (!chatId) { console.error("CS_ADMIN_CHAT_ID belum diset, eskalasi tidak terkirim"); return { ok: false, error: "CS_ADMIN_CHAT_ID belum diset" }; }
   const who = [from.first_name, from.last_name].filter(Boolean).join(" ") || "Tanpa nama";
   const tail = history
     .slice(-4)
     .map((m) => `${m.role === "user" ? "👤" : "🤖"} ${esc(clip(m.content, 300))}`)
     .join("\n");
+  const head = replyTo ? "📎 <b>CS update" : "🆘 <b>CS eskalasi";
   const text = clip(
-    `🆘 <b>CS eskalasi: ${esc(category)}</b>\nDari: ${esc(who)}${from.username ? " (@" + esc(from.username) + ")" : ""} <code>${from.id}</code>\n` +
+    `${head}: ${esc(category)}</b>\nDari: ${esc(who)}${from.username ? " (@" + esc(from.username) + ")" : ""} <code>${from.id}</code>\n` +
       `Ringkasan: ${esc(summary || "-")}\n\n<b>Percakapan terakhir</b>\n${tail}`,
     3900
   );
   const body = { chat_id: chatId, text, parse_mode: "HTML", disable_web_page_preview: true };
+  if (replyTo) { body.reply_to_message_id = replyTo; body.allow_sending_without_reply = true; }
   if (from.username) body.reply_markup = { inline_keyboard: [[{ text: "Buka chat pengguna", url: `https://t.me/${from.username}` }]] };
   try {
-    await tgCs("sendMessage", body);
-    return true;
+    const sent = await tgCs("sendMessage", body);
+    return { ok: true, mid: sent?.message_id };
   } catch (e) {
     console.error("Notif admin gagal:", e.message);
-    return e.message;
+    return { ok: false, error: e.message };
   }
 }
 
@@ -86,7 +88,7 @@ async function handleMessage(msg) {
     if (!adminId) { await reply("CS_ADMIN_CHAT_ID belum diset di Vercel."); return; }
     if (adminId !== String(chatId) && adminId !== String(uid)) { await reply(`Perintah ini hanya untuk admin. ID chat Anda: ${chatId}, ID pengguna: ${uid}. Angka ini berbeda dengan CS_ADMIN_CHAT_ID di Vercel. Samakan, lalu Redeploy.`); return; }
     const r = await notifyAdmin({ from: msg.from, category: "lainnya", summary: "Tes notifikasi admin", history: [{ role: "user", content: "tes" }] });
-    await reply(r === true ? "Notifikasi uji terkirim ke chat admin." : `Gagal mengirim ke chat admin: ${r}`);
+    await reply(r.ok ? "Notifikasi uji terkirim ke chat admin." : `Gagal mengirim ke chat admin: ${r.error}`);
     return;
   }
   if (raw === "/reset") { await kv.del(histKey); await reply("Percakapan direset. Silakan mulai bertanya lagi."); return; }
@@ -119,7 +121,13 @@ async function handleMessage(msg) {
   await reply(out.reply);
   const newHist = trimHistory([...messages, { role: "assistant", content: out.reply }]);
   await kv.set(histKey, newHist, { ex: HIST_TTL });
-  if (out.esc) await notifyAdmin({ from: msg.from, category: out.esc.category, summary: out.esc.summary, history: newHist });
+  if (out.esc) {
+    // Satu tiket per percakapan: eskalasi berikutnya dalam 30 menit dikirim sebagai balasan ke tiket pertama.
+    const escKey = `cs:esc:${chatId}`;
+    const prev = await kv.get(escKey);
+    const r = await notifyAdmin({ from: msg.from, category: out.esc.category, summary: out.esc.summary, history: newHist, replyTo: prev?.mid });
+    if (r.ok) await kv.set(escKey, { mid: prev?.mid ?? r.mid }, { ex: 1800 });
+  }
 }
 
 export default async function handler(req, res) {
